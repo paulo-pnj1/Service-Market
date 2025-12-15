@@ -1,0 +1,55 @@
+Olá! Quero que você crie do zero um **marketplace de serviços chamado "ServiçoJá"** para Angola. Nenhum código, frontend ou backend foi implementado ainda, então você precisa criar tudo: backend, frontend, banco de dados e funcionalidades completas.  
+
+**Contexto do projeto:**  
+ServiçoJá é uma plataforma para conectar clientes a prestadores de serviços locais em Angola. O objetivo é facilitar a contratação de profissionais em diversas áreas (reparos, limpeza, aulas, beleza, tecnologia, etc.), garantindo **qualidade, confiabilidade e facilidade de uso**. Deve ser simples, intuitivo e acessível tanto no desktop quanto em dispositivos móveis.
+
+**Funcionalidades que o sistema deve ter:**
+
+1. **Autenticação e autorização**
+   - Cadastro seguro de clientes e prestadores.  
+   - Login/logout usando JWT ou Firebase Auth.  
+   - Diferenciação de dashboards para clientes e prestadores.  
+   - Recuperação de senha via e-mail.
+
+2. **Cadastro e gerenciamento de prestadores**
+   - Formulário completo: nome, foto, descrição, serviços oferecidos, preço/hora, cidade/localização e categorias.  
+   - Upload de fotos para perfil e serviços.  
+   - Edição e exclusão de perfil pelo prestador.  
+   - Selo de verificação para prestadores confiáveis.
+
+3. **Busca e filtros avançados**
+   - Buscar prestadores por categoria, preço, avaliação e cidade/localização.  
+   - Ordenação por nota, preço ou proximidade.  
+   - Paginação de resultados.
+
+4. **Sistema de avaliações**
+   - Clientes podem avaliar prestadores após serviço.  
+   - Média de notas visível nos cards e perfis.  
+   - Comentários opcionais.
+
+5. **Mensagens e notificações**
+   - Chat interno entre clientes e prestadores.  
+   - Notificações de novas mensagens.
+
+6. **Banco de dados e backend**
+   - Criar banco PostgreSQL (ou outro banco compatível no Replit) para armazenar: usuários, prestadores, serviços, avaliações e mensagens.  
+   - Criar APIs REST completas para todas as operações (CRUD completo).  
+   - Implementar segurança nas APIs.
+
+7. **Frontend**
+   - Interfaces responsivas para mobile e desktop.  
+   - Página inicial com busca centralizada e categorias.  
+   - Cards detalhados de prestadores com foto, preço, avaliações e selo de verificação.  
+   - Perfil do prestador com galeria de fotos, descrição, serviços e avaliações.  
+   - Dashboards separados para clientes e prestadores.  
+   - Botões de ação claros: “Solicitar Orçamento” e “Conversar”.
+
+8. **População inicial de dados**
+   - Criar script de seed para preencher o banco com prestadores, serviços e avaliações fictícias, simulando a realidade de Angola.
+
+9. **Testes e correções**
+   - Garantir que todas as funcionalidades estejam funcionando corretamente.  
+   - Corrigir bugs no console ou na navegação.
+
+**Instrução final:**  
+Por favor, crie o sistema completo, funcional e pronto para produção, **começando do zero**, incluindo frontend, backend, banco de dados, autenticação, APIs, filtros, avaliações e chat. Organize o código de forma limpa e profissional, priorizando segurança, escalabilidade e boa experiência do usuário.
