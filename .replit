@@ -5,9 +5,9 @@ modules = ["nodejs-20", "web"]
 channel = "stable-25_05"
 
 [deployment]
-deploymentTarget = "cloudrun"
-build = ["sh", "-c", "npm run expo:static:build && npm run server:build"]
-run = ["npm", "run", "server:prod"]
+deploymentTarget = "autoscale"
+build = ["bash", "-c", "npm run server:build && npm run expo:static:build"]
+run = ["node", "server_dist/index.js"]
 
 [[ports]]
 localPort = 5000
