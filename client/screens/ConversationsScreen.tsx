@@ -80,7 +80,7 @@ export default function ConversationsScreen() {
             <ThemedText type="body" numberOfLines={1} style={{ flex: 1 }}>
               {otherName}
             </ThemedText>
-            <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
               {time}
             </ThemedText>
           </View>

@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, ScrollView, Alert, ActivityIndicator } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, ScrollView, Alert, ActivityIndicator, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
+import { Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
@@ -11,7 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { login, register } = useAuth();
+  const { login, register, forgotPassword, resetPassword } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -19,6 +20,13 @@ export default function AuthScreen() {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [role, setRole] = useState<"client" | "provider">("client");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [forgotStep, setForgotStep] = useState<"email" | "reset">("email");
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handleSubmit = async () => {
     if (!email || !password) {
@@ -159,6 +167,14 @@ export default function AuthScreen() {
           )}
         </Button>
 
+        {isLogin && (
+          <Pressable onPress={() => setShowForgotPassword(true)} style={styles.forgotButton}>
+            <ThemedText type="small" style={{ color: theme.primary }}>
+              Esqueceu sua senha?
+            </ThemedText>
+          </Pressable>
+        )}
+
         <Pressable onPress={() => setIsLogin(!isLogin)} style={styles.switchButton}>
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
             {isLogin ? "Nao tem conta? " : "Ja tem conta? "}
@@ -168,6 +184,125 @@ export default function AuthScreen() {
           </ThemedText>
         </Pressable>
       </View>
+
+      <Modal visible={showForgotPassword} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundSecondary }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="h3">
+                {forgotStep === "email" ? "Recuperar Senha" : "Nova Senha"}
+              </ThemedText>
+              <Pressable onPress={() => { setShowForgotPassword(false); setForgotStep("email"); }}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+
+            {forgotStep === "email" ? (
+              <View style={styles.modalForm}>
+                <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+                  Insira seu email para receber o codigo de recuperacao
+                </ThemedText>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text }]}
+                  placeholder="seu@email.com"
+                  placeholderTextColor={theme.textSecondary}
+                  value={forgotEmail}
+                  onChangeText={setForgotEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <Button
+                  onPress={async () => {
+                    if (!forgotEmail.trim()) {
+                      Alert.alert("Erro", "Por favor, insira seu email");
+                      return;
+                    }
+                    setForgotLoading(true);
+                    const result = await forgotPassword(forgotEmail.trim());
+                    setForgotLoading(false);
+                    if (result.success) {
+                      Alert.alert("Sucesso", result.message || "Codigo enviado para seu email");
+                      setForgotStep("reset");
+                    } else {
+                      Alert.alert("Erro", result.error || "Erro ao solicitar recuperacao");
+                    }
+                  }}
+                  disabled={forgotLoading}
+                  style={{ marginTop: Spacing.lg }}
+                >
+                  {forgotLoading ? <ActivityIndicator color="#fff" /> : "Enviar Codigo"}
+                </Button>
+              </View>
+            ) : (
+              <View style={styles.modalForm}>
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text }]}
+                  placeholder="Codigo de recuperacao"
+                  placeholderTextColor={theme.textSecondary}
+                  value={resetToken}
+                  onChangeText={setResetToken}
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text, marginTop: Spacing.md }]}
+                  placeholder="Nova senha (min. 6 caracteres)"
+                  placeholderTextColor={theme.textSecondary}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  secureTextEntry
+                />
+                <TextInput
+                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text, marginTop: Spacing.md }]}
+                  placeholder="Confirmar senha"
+                  placeholderTextColor={theme.textSecondary}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry
+                />
+                <Button
+                  onPress={async () => {
+                    if (!resetToken.trim()) {
+                      Alert.alert("Erro", "Por favor, insira o codigo");
+                      return;
+                    }
+                    if (!newPassword || newPassword.length < 6) {
+                      Alert.alert("Erro", "Senha deve ter pelo menos 6 caracteres");
+                      return;
+                    }
+                    if (newPassword !== confirmPassword) {
+                      Alert.alert("Erro", "Senhas nao coincidem");
+                      return;
+                    }
+                    setForgotLoading(true);
+                    const result = await resetPassword(resetToken.trim(), newPassword);
+                    setForgotLoading(false);
+                    if (result.success) {
+                      Alert.alert("Sucesso", "Senha redefinida! Faca login.");
+                      setShowForgotPassword(false);
+                      setForgotStep("email");
+                      setForgotEmail("");
+                      setResetToken("");
+                      setNewPassword("");
+                      setConfirmPassword("");
+                    } else {
+                      Alert.alert("Erro", result.error || "Erro ao redefinir senha");
+                    }
+                  }}
+                  disabled={forgotLoading}
+                  style={{ marginTop: Spacing.lg }}
+                >
+                  {forgotLoading ? <ActivityIndicator color="#fff" /> : "Redefinir Senha"}
+                </Button>
+                <Pressable onPress={() => setForgotStep("email")} style={{ alignItems: "center", marginTop: Spacing.md }}>
+                  <ThemedText type="small" style={{ color: theme.primary }}>
+                    Enviar novo codigo
+                  </ThemedText>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -222,8 +357,29 @@ const styles = StyleSheet.create({
   submitButton: {
     marginTop: Spacing.lg,
   },
+  forgotButton: {
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
   switchButton: {
     alignItems: "center",
     paddingVertical: Spacing.lg,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  modalForm: {},
 });

@@ -36,8 +36,13 @@ export default function ProfileScreen() {
     );
   };
 
+  const isProvider = user?.role === "provider" && provider;
+
   const menuItems = [
     { icon: "edit-2", label: "Editar Perfil", onPress: () => navigation.navigate("EditProfile") },
+    ...(isProvider
+      ? [{ icon: "briefcase", label: "Meus Servicos", onPress: () => navigation.navigate("ServiceManagement") }]
+      : [{ icon: "clock", label: "Historico de Servicos", onPress: () => navigation.navigate("OrderHistory") }]),
     { icon: "bell", label: "Notificacoes", onPress: () => {} },
     { icon: "help-circle", label: "Ajuda", onPress: () => {} },
     { icon: "info", label: "Sobre", onPress: () => {} },

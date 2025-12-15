@@ -86,7 +86,7 @@ export default function ChatScreen() {
             {item.content}
           </ThemedText>
         </View>
-        <ThemedText type="caption" style={[styles.messageTime, { color: theme.textSecondary }]}>
+        <ThemedText type="small" style={[styles.messageTime, { color: theme.textSecondary }]}>
           {formatTime(item.createdAt)}
         </ThemedText>
       </View>

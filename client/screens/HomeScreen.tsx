@@ -24,11 +24,11 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<any[]>({
     queryKey: ["/api/categories"],
   });
 
-  const { data: providers = [], isLoading: providersLoading } = useQuery({
+  const { data: providers = [], isLoading: providersLoading } = useQuery<any[]>({
     queryKey: ["/api/providers"],
   });
 
