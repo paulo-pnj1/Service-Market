@@ -14,8 +14,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#FF6B35"
+        "backgroundColor": "#FF6B35",
+        "foregroundImage": "./assets/images/icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -23,37 +23,7 @@
     },
     "web": {
       "output": "single",
-      "favicon": "./assets/images/favicon.png",
-      "bundler": "metro",
-      "pwa": {
-        "name": "ServiçoJá",
-        "shortName": "ServiçoJá",
-        "description": "Marketplace de serviços locais em Angola",
-        "themeColor": "#FF6B35",
-        "backgroundColor": "#FFFFFF",
-        "display": "standalone",
-        "scope": "/",
-        "startUrl": "/",
-        "orientation": "portrait-primary",
-        "icons": [
-          {
-            "src": "./assets/images/icon.png",
-            "sizes": "192x192",
-            "type": "image/png"
-          },
-          {
-            "src": "./assets/images/icon.png",
-            "sizes": "512x512",
-            "type": "image/png"
-          },
-          {
-            "src": "./assets/images/icon.png",
-            "sizes": "any",
-            "type": "image/png",
-            "purpose": "maskable"
-          }
-        ]
-      }
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       [
@@ -68,9 +38,7 @@
           }
         }
       ],
-      "expo-web-browser",
-      "expo-image-picker",
-      "expo-media-library"
+      "expo-web-browser"
     ],
     "experiments": {
       "reactCompiler": true

@@ -13,8 +13,6 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
-import * as ImagePicker from "expo-image-picker";
-import { Image } from "expo-image";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
@@ -33,36 +31,19 @@ export default function EditProfileScreen() {
   const [whatsapp, setWhatsapp] = useState(provider?.whatsapp || "");
   const [facebook, setFacebook] = useState(provider?.facebook || "");
   const [description, setDescription] = useState(provider?.description || "");
-  const [hourlyRate, setHourlyRate] = useState(provider?.hourlyRate?.toString() || "");
-  const [photoUrl, setPhotoUrl] = useState(user?.photoUrl || provider?.photoUrl || "");
+  const [hourlyRate, setHourlyRate] = useState(provider?.hourlyRate || "");
 
   const isProviderRole = user?.role === "provider";
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets[0].uri) {
-      // Em produção, aqui você enviaria para o backend /api/upload/photo
-      // Por enquanto, usamos a URI local (funciona em mobile, para web precisa upload real)
-      setPhotoUrl(result.assets[0].uri);
-      Alert.alert("Sucesso", "Foto selecionada! Salve para aplicar.");
-    }
-  };
-
   const updateMutation = useMutation({
     mutationFn: async () => {
-      // Atualizar usuário
-      const userPayload = { name, phone, city, photoUrl };
-      const userRes = await apiRequest("PUT", `/api/users/${user?.id}`, userPayload);
+      // Atualizar dados do usuário sempre
+      const userRes = await apiRequest("PUT", `/api/users/${user?.id}`, { name, phone, city });
       const userData = await userRes.json();
 
       let providerData = null;
 
+      // Se for prestador
       if (isProviderRole) {
         const providerPayload = {
           whatsapp,
@@ -70,13 +51,14 @@ export default function EditProfileScreen() {
           description,
           hourlyRate: hourlyRate ? Number(hourlyRate) : null,
           city,
-          photoUrl,
         };
 
         if (provider) {
+          // Provider já existe → PUT (atualizar)
           const providerRes = await apiRequest("PUT", `/api/providers/${provider.id}`, providerPayload);
           providerData = await providerRes.json();
         } else {
+          // Provider NÃO existe ainda (conta antiga) → POST (criar novo)
           const providerRes = await apiRequest("POST", "/api/providers", providerPayload);
           providerData = await providerRes.json();
         }
@@ -116,21 +98,6 @@ export default function EditProfileScreen() {
         scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
         <View style={styles.form}>
-          <View style={styles.photoSection}>
-            <Pressable onPress={pickImage}>
-              {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.avatarPreview} contentFit="cover" />
-              ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: theme.primary }]}>
-                  <Ionicons name="camera-outline" size={40} color="#fff" />
-                </View>
-              )}
-            </Pressable>
-            <Button onPress={pickImage} style={styles.changePhotoButton}>
-              Alterar Foto de Perfil
-            </Button>
-          </View>
-
           <ThemedText type="h3" style={styles.sectionTitle}>
             Informações Pessoais
           </ThemedText>
@@ -296,27 +263,6 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: Spacing.lg,
-  },
-  photoSection: {
-    alignItems: "center",
-    marginBottom: Spacing.xl,
-  },
-  avatarPreview: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    marginBottom: Spacing.md,
-  },
-  avatarPlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: Spacing.md,
-  },
-  changePhotoButton: {
-    marginTop: Spacing.sm,
   },
   sectionTitle: {
     marginBottom: Spacing.sm,
