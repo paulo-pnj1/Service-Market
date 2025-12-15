@@ -20,12 +20,10 @@ function verifyToken(token: string): { valid: boolean; payload?: any } {
   try {
     const [header, body, signature] = token.split(".");
     const expectedSignature = createHash("sha256").update(`${header}.${body}.${JWT_SECRET}`).digest("base64url");
-
     if (signature !== expectedSignature) {
       return { valid: false };
     }
     const payload = JSON.parse(Buffer.from(body, "base64url").toString());
-
     if (payload.exp && payload.exp < Date.now()) {
       return { valid: false };
     }
@@ -37,7 +35,6 @@ function verifyToken(token: string): { valid: boolean; payload?: any } {
 
 function authMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ message: "Authorization token required" });
   }
@@ -52,7 +49,6 @@ function authMiddleware(req: Request, res: Response, next: NextFunction) {
 
 function optionalAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
-
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7);
     const result = verifyToken(token);
@@ -60,7 +56,6 @@ function optionalAuth(req: Request, res: Response, next: NextFunction) {
       (req as any).user = result.payload;
     }
   }
-
   next();
 }
 
@@ -108,7 +103,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const token = generateToken({ userId: user.id, email: user.email, role: user.role });
       const { password: _, ...userWithoutPassword } = user;
-
       res.json({ user: userWithoutPassword, provider, token });
     } catch (error) {
       console.error("Register error:", error);
@@ -159,7 +153,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         resetTokenExpiry,
       } as any);
       console.log(`Password reset token for ${email}: ${resetToken}`);
-
       res.json({
         message: "Se o email existir, você receberá instruções para redefinir a senha",
         resetToken
@@ -212,12 +205,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/users/:id", authMiddleware, async (req: Request, res: Response) => {
     try {
       const authUser = (req as any).user;
-
       if (authUser.userId !== req.params.id) {
         return res.status(403).json({ message: "Você só pode editar seu próprio perfil" });
       }
       const { password, resetToken, resetTokenExpiry, ...updateData } = req.body;
-
       const user = await storage.updateUser(req.params.id, updateData);
       if (!user) {
         return res.status(404).json({ message: "Usuário não encontrado" });
@@ -227,6 +218,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Update user error:", error);
       res.status(500).json({ message: "Erro interno do servidor" });
+    }
+  });
+
+  // NOVA ROTA: Upload de foto de perfil
+  app.post("/api/upload/photo", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const authUser = (req as any).user;
+      const { base64, fileName } = req.body;
+
+      if (!base64 || !fileName) {
+        return res.status(400).json({ message: "Dados da imagem inválidos" });
+      }
+
+      // Aqui você deve integrar com um serviço real de armazenamento (Cloudinary, AWS S3, etc.)
+      // Exemplo com URL fictícia - substitua pela implementação real
+      const photoUrl = `https://your-cdn-domain.com/uploads/${fileName}`;
+
+      // Atualiza a foto no usuário
+      await storage.updateUser(authUser.userId, { photoUrl });
+
+      // Se for prestador, atualiza também no provider
+      if (authUser.role === "provider") {
+        const provider = await storage.getProviderByUserId(authUser.userId);
+        if (provider) {
+          await storage.updateProvider(provider.id, { photoUrl });
+        }
+      }
+
+      res.json({ url: photoUrl });
+    } catch (error) {
+      console.error("Upload photo error:", error);
+      res.status(500).json({ message: "Erro ao fazer upload da foto" });
     }
   });
 
@@ -243,7 +266,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/providers", async (req: Request, res: Response) => {
     try {
       const { categoryId, city, minRating, maxPrice, search, page, limit, sortBy, sortOrder } = req.query;
-
       const result = await storage.getProviders({
         categoryId: categoryId as string,
         city: city as string,
@@ -256,7 +278,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         sortBy: sortBy as string,
         sortOrder: sortOrder as 'asc' | 'desc',
       });
-
       res.json(result);
     } catch (error) {
       console.error("Get providers error:", error);
@@ -268,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const provider = await storage.getProviderWithDetails(req.params.id);
       if (!provider) {
-        return res.status(404).json({ message: "Prest<|reserved_77|>ador não encontrado" });
+        return res.status(404).json({ message: "Prestador não encontrado" });
       }
       res.json(provider);
     } catch (error) {
@@ -280,7 +301,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/providers", authMiddleware, async (req: Request, res: Response) => {
     try {
       const authUser = (req as any).user;
-
       const existingProvider = await storage.getProviderByUserId(authUser.userId);
       if (existingProvider) {
         return res.status(400).json({ message: "Você já é um prestador cadastrado" });
@@ -289,13 +309,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         userId: authUser.userId,
       });
-
       if (req.body.categoryIds && Array.isArray(req.body.categoryIds)) {
         for (const categoryId of req.body.categoryIds) {
           await storage.addProviderCategory(provider.id, categoryId);
         }
       }
-
       res.json(provider);
     } catch (error) {
       console.error("Create provider error:", error);
@@ -307,7 +325,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const existingProvider = await storage.getProvider(req.params.id);
-
       if (!existingProvider) {
         return res.status(404).json({ message: "Prestador não encontrado" });
       }
@@ -315,26 +332,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Você só pode editar seu próprio perfil de prestador" });
       }
       const { categoryIds, ...updateData } = req.body;
-
       const provider = await storage.updateProvider(req.params.id, updateData);
-
       if (categoryIds && Array.isArray(categoryIds)) {
         const currentCategories = await storage.getProviderCategories(req.params.id);
         const currentCategoryIds = currentCategories.map(c => c.id);
-
         for (const catId of currentCategoryIds) {
           if (!categoryIds.includes(catId)) {
             await storage.removeProviderCategory(req.params.id, catId);
           }
         }
-
         for (const catId of categoryIds) {
           if (!currentCategoryIds.includes(catId)) {
             await storage.addProviderCategory(req.params.id, catId);
           }
         }
       }
-
       res.json(provider);
     } catch (error) {
       console.error("Update provider error:", error);
@@ -346,7 +358,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const provider = await storage.getProvider(req.params.id);
-
       if (!provider || provider.userId !== authUser.userId) {
         return res.status(403).json({ message: "Não autorizado" });
       }
@@ -372,7 +383,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const provider = await storage.getProviderByUserId(authUser.userId);
-
       if (!provider) {
         return res.status(403).json({ message: "Você precisa ser um prestador para criar serviços" });
       }
@@ -394,7 +404,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const existingService = await storage.getService(req.params.id);
-
       if (!existingService) {
         return res.status(404).json({ message: "Serviço não encontrado" });
       }
@@ -414,7 +423,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const existingService = await storage.getService(req.params.id);
-
       if (!existingService) {
         return res.status(404).json({ message: "Serviço não encontrado" });
       }
@@ -472,7 +480,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const { role } = req.query;
-
       const orders = await storage.getServiceOrders(
         authUser.userId,
         (role as 'client' | 'provider') || 'client'
@@ -570,11 +577,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const { providerId } = req.body;
-
       if (!providerId) {
         return res.status(400).json({ message: "providerId é obrigatório" });
       }
-
       const conv = await storage.getOrCreateConversation(authUser.userId, providerId);
       res.json(conv);
     } catch (error) {
@@ -587,7 +592,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const conv = await storage.getConversation(req.params.id);
-
       if (!conv) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
@@ -602,7 +606,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         page: page ? parseInt(page as string) : 1,
         limit: limit ? parseInt(limit as string) : 50,
       });
-
       res.json(result);
     } catch (error) {
       console.error("Get messages error:", error);
@@ -643,7 +646,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const conv = await storage.getConversation(req.params.id);
-
       if (!conv) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
@@ -692,11 +694,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const { providerId } = req.body;
-
       if (!providerId) {
         return res.status(400).json({ message: "providerId é obrigatório" });
       }
-
       await storage.removeFavorite(authUser.userId, providerId);
       res.json({ success: true });
     } catch (error) {
@@ -709,11 +709,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const authUser = (req as any).user;
       const { providerId } = req.query;
-
       if (!providerId) {
         return res.status(400).json({ message: "providerId é obrigatório" });
       }
-
       const isFav = await storage.isFavorite(authUser.userId, providerId as string);
       res.json({ isFavorite: isFav });
     } catch (error) {
