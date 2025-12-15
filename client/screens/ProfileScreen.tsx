@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, StyleSheet, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -24,6 +24,23 @@ export default function ProfileScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<NavigationProp>();
   const { user, provider, logout } = useAuth();
+
+  // CORREÇÃO: Se o usuário for prestador mas provider ainda for null, guiar para completar o perfil
+  useEffect(() => {
+    if (user?.role === "provider" && !provider) {
+      Alert.alert(
+        "Complete o seu perfil de prestador",
+        "Para acessar todas as funcionalidades (Meus Serviços, estatísticas, etc.), complete o seu perfil agora.",
+        [
+          { text: "Mais tarde", style: "cancel" },
+          {
+            text: "Completar agora",
+            onPress: () => navigation.navigate("EditProfile"),
+          },
+        ]
+      );
+    }
+  }, [user, provider, navigation]);
 
   const handleLogout = () => {
     Alert.alert(

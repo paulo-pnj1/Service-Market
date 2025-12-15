@@ -33,26 +33,38 @@ export default function EditProfileScreen() {
   const [description, setDescription] = useState(provider?.description || "");
   const [hourlyRate, setHourlyRate] = useState(provider?.hourlyRate || "");
 
-  const isProvider = user?.role === "provider" && provider;
+  const isProviderRole = user?.role === "provider";
 
   const updateMutation = useMutation({
     mutationFn: async () => {
+      // Atualizar dados do usuário sempre
       const userRes = await apiRequest("PUT", `/api/users/${user?.id}`, { name, phone, city });
       const userData = await userRes.json();
-      
-      if (isProvider && provider) {
-        const providerRes = await apiRequest("PUT", `/api/providers/${provider.id}`, {
+
+      let providerData = null;
+
+      // Se for prestador
+      if (isProviderRole) {
+        const providerPayload = {
           whatsapp,
           facebook,
           description,
-          hourlyRate,
+          hourlyRate: hourlyRate ? Number(hourlyRate) : null,
           city,
-        });
-        const providerData = await providerRes.json();
-        return { user: userData, provider: providerData };
+        };
+
+        if (provider) {
+          // Provider já existe → PUT (atualizar)
+          const providerRes = await apiRequest("PUT", `/api/providers/${provider.id}`, providerPayload);
+          providerData = await providerRes.json();
+        } else {
+          // Provider NÃO existe ainda (conta antiga) → POST (criar novo)
+          const providerRes = await apiRequest("POST", "/api/providers", providerPayload);
+          providerData = await providerRes.json();
+        }
       }
-      
-      return { user: userData };
+
+      return { user: userData, provider: providerData };
     },
     onSuccess: (data) => {
       updateUser(data.user);
@@ -69,7 +81,7 @@ export default function EditProfileScreen() {
 
   const handleSave = () => {
     if (!name.trim()) {
-      Alert.alert("Erro", "Nome e obrigatorio");
+      Alert.alert("Erro", "Nome é obrigatório");
       return;
     }
     updateMutation.mutate();
@@ -87,13 +99,16 @@ export default function EditProfileScreen() {
       >
         <View style={styles.form}>
           <ThemedText type="h3" style={styles.sectionTitle}>
-            Informacoes Pessoais
+            Informações Pessoais
           </ThemedText>
 
           <View style={styles.inputGroup}>
-            <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-              Nome
-            </ThemedText>
+            <View style={styles.inputLabel}>
+              <Ionicons name="person-outline" size={18} color={theme.textSecondary} />
+              <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                Nome
+              </ThemedText>
+            </View>
             <TextInput
               style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
               placeholder="Seu nome"
@@ -104,9 +119,12 @@ export default function EditProfileScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-              Telefone
-            </ThemedText>
+            <View style={styles.inputLabel}>
+              <Ionicons name="call-outline" size={18} color={theme.textSecondary} />
+              <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                Telefone
+              </ThemedText>
+            </View>
             <TextInput
               style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
               placeholder="Seu telefone"
@@ -118,9 +136,12 @@ export default function EditProfileScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-              Cidade
-            </ThemedText>
+            <View style={styles.inputLabel}>
+              <Ionicons name="location-outline" size={18} color={theme.textSecondary} />
+              <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                Cidade
+              </ThemedText>
+            </View>
             <TextInput
               style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
               placeholder="Sua cidade"
@@ -130,23 +151,26 @@ export default function EditProfileScreen() {
             />
           </View>
 
-          {isProvider && (
+          {isProviderRole && (
             <>
               <ThemedText type="h3" style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>
-                Informacoes do Prestador
+                Informações do Prestador
               </ThemedText>
 
               <View style={styles.inputGroup}>
-                <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-                  Descricao
-                </ThemedText>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="document-text-outline" size={18} color={theme.textSecondary} />
+                  <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                    Descrição
+                  </ThemedText>
+                </View>
                 <TextInput
                   style={[
                     styles.input,
                     styles.textArea,
                     { backgroundColor: theme.backgroundSecondary, color: theme.text },
                   ]}
-                  placeholder="Descreva seus servicos"
+                  placeholder="Descreva seus serviços"
                   placeholderTextColor={theme.textSecondary}
                   value={description}
                   onChangeText={setDescription}
@@ -157,9 +181,12 @@ export default function EditProfileScreen() {
               </View>
 
               <View style={styles.inputGroup}>
-                <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-                  Valor por Hora (Kz)
-                </ThemedText>
+                <View style={styles.inputLabel}>
+                  <Ionicons name="cash-outline" size={18} color={theme.textSecondary} />
+                  <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                    Valor por Hora (Kz)
+                  </ThemedText>
+                </View>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
                   placeholder="Ex: 5000"
@@ -200,7 +227,7 @@ export default function EditProfileScreen() {
                 </View>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
-                  placeholder="Link do perfil ou nome de usuario"
+                  placeholder="Link do perfil ou nome de usuário"
                   placeholderTextColor={theme.textSecondary}
                   value={facebook}
                   onChangeText={setFacebook}
@@ -212,14 +239,14 @@ export default function EditProfileScreen() {
                 onPress={() => navigation.navigate("ServiceManagement" as any)}
               >
                 <Ionicons name="briefcase-outline" size={22} color={theme.primary} />
-                <ThemedText style={styles.menuItemText}>Gerenciar Servicos</ThemedText>
+                <ThemedText style={styles.menuItemText}>Gerenciar Serviços</ThemedText>
                 <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
               </Pressable>
             </>
           )}
 
           <Button onPress={handleSave} disabled={updateMutation.isPending} style={styles.saveButton}>
-            {updateMutation.isPending ? <ActivityIndicator color="#fff" /> : "Salvar Alteracoes"}
+            {updateMutation.isPending ? <ActivityIndicator color="#fff" /> : "Salvar Alterações"}
           </Button>
         </View>
       </KeyboardAwareScrollViewCompat>

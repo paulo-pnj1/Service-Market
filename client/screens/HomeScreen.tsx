@@ -28,9 +28,13 @@ export default function HomeScreen() {
     queryKey: ["/api/categories"],
   });
 
-  const { data: providers = [], isLoading: providersLoading } = useQuery<any[]>({
+  const { data: providersData, isLoading: providersLoading } = useQuery<any[]>({
     queryKey: ["/api/providers"],
   });
+
+  // Fix: Ensure providers is always an array
+  const providers = Array.isArray(providersData) ? providersData : [];
+  const featuredProviders = providers.slice(0, 6);
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -45,8 +49,6 @@ export default function HomeScreen() {
   const handleProviderPress = (providerId: string) => {
     navigation.navigate("Provider", { providerId });
   };
-
-  const featuredProviders = providers.slice(0, 6);
 
   return (
     <ThemedView style={styles.container}>
