@@ -1,0 +1,59 @@
+Olá! Quero que você complete o projeto "ServiçoJá", integrando todas as funcionalidades faltantes ao MVP existente e deixando o marketplace totalmente funcional e pronto para produção.  
+
+O MVP já possui: login, cadastro, perfis de prestadores, busca básica, avaliações e chat simples.
+
+**Funcionalidades faltantes a implementar de uma vez:**
+
+1. **Telas e navegação**
+   - `EditProfileScreen` para prestadores editarem seus perfis, **incluindo foto de perfil e contatos**.
+   - **Registro de contatos do prestador**:
+     - Telefone, WhatsApp, Facebook.
+   - **Tela de gerenciamento de serviços do prestador**:
+     - Permitir que o prestador **registre novos serviços** (nome, descrição, preço/hora, categoria).  
+     - Editar e remover serviços existentes.  
+     - Serviços devem aparecer no perfil do prestador.
+   - Tela de histórico de serviços do cliente.
+   - Ajustes na navegação (`MessagesStackNavigator`) para chat completo.
+
+2. **Autenticação e segurança**
+   - Recuperação de senha via e-mail.
+   - Validação de formulários e autorização: apenas donos podem editar/excluir seus dados.
+   - (Opcional) Verificação de e-mail no cadastro.
+
+3. **Chat e notificações**
+   - Histórico completo de mensagens entre clientes e prestadores.
+   - Notificações push para mensagens novas.
+   - Indicador de status online/offline (opcional).
+
+4. **Avaliações e feedback**
+   - Clientes podem avaliar prestadores apenas após serviço concluído.
+   - Média de avaliações visível em todos os cards.
+   - Sistema de reporte de avaliações/prestadores (opcional).
+
+5. **Busca e filtros avançados**
+   - Filtros por categoria, preço, avaliação mínima e cidade/localização.
+   - Ordenação por nota, preço ou proximidade.
+   - Paginação de resultados.
+
+6. **Backend e banco**
+   - Revisar APIs REST e garantir CRUD completo para usuários, prestadores, **serviços, foto de perfil e contatos**, avaliações e mensagens.
+   - Segurança JWT em todas as rotas.
+   - Atualizar seed com mais prestadores, serviços, fotos e contatos simulados.
+
+7. **Frontend e UI/UX**
+   - Tornar todas as telas responsivas e consistentes.
+   - Melhorar cores, tipografia e experiência do usuário.
+   - Fluxo completo do usuário: cadastro → login → busca → contratação → avaliação.
+   - Mensagens de erro/sucesso claras.
+
+8. **Preparação para produção**
+   - Variáveis de ambiente configuradas (`.env`).
+   - Build final do app Expo para Android, iOS e Web.
+   - Testes finais de estabilidade e performance.
+
+**Instruções:**  
+- Implemente tudo de uma vez, integrando ao MVP existente.  
+- Mantenha o código limpo, modular e seguro.  
+- Informe quando cada funcionalidade estiver pronta para teste.  
+
+O objetivo final é entregar o ServiçoJá **completo, funcional e pronto para usuários reais**, incluindo **registro de serviços, foto de perfil e contatos do prestador**.

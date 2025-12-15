@@ -14,6 +14,8 @@ export const users = pgTable("users", {
   city: text("city"),
   photoUrl: text("photo_url"),
   role: text("role").notNull().default("client"),
+  resetToken: text("reset_token"),
+  resetTokenExpiry: timestamp("reset_token_expiry"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -27,7 +29,11 @@ export const providers = pgTable("providers", {
   description: text("description"),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
   city: text("city").notNull(),
+  whatsapp: text("whatsapp"),
+  facebook: text("facebook"),
   isVerified: boolean("is_verified").default(false),
+  isOnline: boolean("is_online").default(false),
+  lastSeenAt: timestamp("last_seen_at"),
   totalRatings: integer("total_ratings").default(0),
   averageRating: decimal("average_rating", { precision: 2, scale: 1 }).default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -61,10 +67,38 @@ export const services = pgTable("services", {
   providerId: varchar("provider_id")
     .notNull()
     .references(() => providers.id, { onDelete: "cascade" }),
+  categoryId: varchar("category_id")
+    .references(() => categories.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
   price: decimal("price", { precision: 10, scale: 2 }),
+  duration: integer("duration"),
   photoUrl: text("photo_url"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const serviceOrders = pgTable("service_orders", {
+  id: varchar("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  providerId: varchar("provider_id")
+    .notNull()
+    .references(() => providers.id, { onDelete: "cascade" }),
+  serviceId: varchar("service_id")
+    .references(() => services.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("pending"),
+  scheduledDate: timestamp("scheduled_date"),
+  completedDate: timestamp("completed_date"),
+  price: decimal("price", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+  clientNotes: text("client_notes"),
+  providerNotes: text("provider_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const reviews = pgTable("reviews", {
@@ -77,6 +111,8 @@ export const reviews = pgTable("reviews", {
   clientId: varchar("client_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+  orderId: varchar("order_id")
+    .references(() => serviceOrders.id, { onDelete: "set null" }),
   rating: integer("rating").notNull(),
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -133,6 +169,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   favorites: many(favorites),
   conversations: many(conversations),
   messages: many(messages),
+  orders: many(serviceOrders),
 }));
 
 export const providersRelations = relations(providers, ({ one, many }) => ({
@@ -145,10 +182,12 @@ export const providersRelations = relations(providers, ({ one, many }) => ({
   reviews: many(reviews),
   conversations: many(conversations),
   favorites: many(favorites),
+  orders: many(serviceOrders),
 }));
 
 export const categoriesRelations = relations(categories, ({ many }) => ({
   providers: many(providerCategories),
+  services: many(services),
 }));
 
 export const providerCategoriesRelations = relations(providerCategories, ({ one }) => ({
@@ -162,10 +201,34 @@ export const providerCategoriesRelations = relations(providerCategories, ({ one 
   }),
 }));
 
-export const servicesRelations = relations(services, ({ one }) => ({
+export const servicesRelations = relations(services, ({ one, many }) => ({
   provider: one(providers, {
     fields: [services.providerId],
     references: [providers.id],
+  }),
+  category: one(categories, {
+    fields: [services.categoryId],
+    references: [categories.id],
+  }),
+  orders: many(serviceOrders),
+}));
+
+export const serviceOrdersRelations = relations(serviceOrders, ({ one }) => ({
+  client: one(users, {
+    fields: [serviceOrders.clientId],
+    references: [users.id],
+  }),
+  provider: one(providers, {
+    fields: [serviceOrders.providerId],
+    references: [providers.id],
+  }),
+  service: one(services, {
+    fields: [serviceOrders.serviceId],
+    references: [services.id],
+  }),
+  review: one(reviews, {
+    fields: [serviceOrders.id],
+    references: [reviews.orderId],
   }),
 }));
 
@@ -177,6 +240,10 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
   client: one(users, {
     fields: [reviews.clientId],
     references: [users.id],
+  }),
+  order: one(serviceOrders, {
+    fields: [reviews.orderId],
+    references: [serviceOrders.id],
   }),
 }));
 
@@ -227,9 +294,13 @@ export const insertCategorySchema = createInsertSchema(categories).omit({ id: tr
 export type InsertCategory = z.infer<typeof insertCategorySchema>;
 export type Category = typeof categories.$inferSelect;
 
-export const insertServiceSchema = createInsertSchema(services).omit({ id: true });
+export const insertServiceSchema = createInsertSchema(services).omit({ id: true, createdAt: true });
 export type InsertService = z.infer<typeof insertServiceSchema>;
 export type Service = typeof services.$inferSelect;
+
+export const insertServiceOrderSchema = createInsertSchema(serviceOrders).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertServiceOrder = z.infer<typeof insertServiceOrderSchema>;
+export type ServiceOrder = typeof serviceOrders.$inferSelect;
 
 export const insertReviewSchema = createInsertSchema(reviews).omit({ id: true, createdAt: true });
 export type InsertReview = z.infer<typeof insertReviewSchema>;

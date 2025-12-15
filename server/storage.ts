@@ -1,17 +1,26 @@
 import { 
   users, providers, categories, providerCategories, services, reviews, 
-  conversations, messages, favorites,
+  conversations, messages, favorites, serviceOrders,
   type User, type InsertUser, type Provider, type InsertProvider,
   type Category, type InsertCategory, type Service, type InsertService,
   type Review, type InsertReview, type Conversation, type InsertConversation,
-  type Message, type InsertMessage, type Favorite, type InsertFavorite
+  type Message, type InsertMessage, type Favorite, type InsertFavorite,
+  type ServiceOrder, type InsertServiceOrder
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, or, desc, asc, ilike, gte, lte, sql } from "drizzle-orm";
+import { eq, and, or, desc, asc, ilike, gte, lte, sql, ne } from "drizzle-orm";
+
+export interface PaginationOptions {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByResetToken(token: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
 
@@ -25,32 +34,47 @@ export interface IStorage {
     minRating?: number;
     maxPrice?: number;
     search?: string;
-  }): Promise<(Provider & { user: User; categories: Category[] })[]>;
+  }, pagination?: PaginationOptions): Promise<{ providers: (Provider & { user: User; categories: Category[] })[]; total: number; page: number; totalPages: number }>;
   getProviderWithDetails(id: string): Promise<(Provider & { user: User; categories: Category[]; services: Service[]; reviews: (Review & { client: User })[] }) | undefined>;
+  updateProviderOnlineStatus(providerId: string, isOnline: boolean): Promise<void>;
 
   getCategories(): Promise<Category[]>;
   createCategory(category: InsertCategory): Promise<Category>;
 
   addProviderCategory(providerId: string, categoryId: string): Promise<void>;
   removeProviderCategory(providerId: string, categoryId: string): Promise<void>;
+  getProviderCategories(providerId: string): Promise<Category[]>;
 
   getServices(providerId: string): Promise<Service[]>;
+  getService(id: string): Promise<Service | undefined>;
   createService(service: InsertService): Promise<Service>;
   updateService(id: string, data: Partial<InsertService>): Promise<Service | undefined>;
   deleteService(id: string): Promise<void>;
 
   getReviews(providerId: string): Promise<(Review & { client: User })[]>;
   createReview(review: InsertReview): Promise<Review>;
+  canUserReviewProvider(clientId: string, providerId: string): Promise<boolean>;
+
+  getServiceOrders(userId: string, role: 'client' | 'provider'): Promise<(ServiceOrder & { 
+    client: User; 
+    provider: Provider & { user: User }; 
+    service?: Service;
+    review?: Review;
+  })[]>;
+  getServiceOrder(id: string): Promise<ServiceOrder | undefined>;
+  createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder>;
+  updateServiceOrder(id: string, data: Partial<InsertServiceOrder>): Promise<ServiceOrder | undefined>;
 
   getConversations(userId: string): Promise<(Conversation & { 
     client: User; 
     provider: Provider & { user: User };
     lastMessage?: Message;
+    unreadCount?: number;
   })[]>;
   getConversation(id: string): Promise<Conversation | undefined>;
   getOrCreateConversation(clientId: string, providerId: string): Promise<Conversation>;
   
-  getMessages(conversationId: string): Promise<(Message & { sender: User })[]>;
+  getMessages(conversationId: string, pagination?: PaginationOptions): Promise<{ messages: (Message & { sender: User })[]; total: number }>;
   createMessage(message: InsertMessage): Promise<Message>;
   markMessagesAsRead(conversationId: string, userId: string): Promise<void>;
 
@@ -68,6 +92,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
+  async getUserByResetToken(token: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.resetToken, token));
     return user || undefined;
   }
 
@@ -101,18 +130,29 @@ export class DatabaseStorage implements IStorage {
     return provider || undefined;
   }
 
+  async updateProviderOnlineStatus(providerId: string, isOnline: boolean): Promise<void> {
+    await db.update(providers).set({ 
+      isOnline, 
+      lastSeenAt: new Date() 
+    }).where(eq(providers.id, providerId));
+  }
+
   async getProviders(filters?: {
     categoryId?: string;
     city?: string;
     minRating?: number;
     maxPrice?: number;
     search?: string;
-  }): Promise<(Provider & { user: User; categories: Category[] })[]> {
+  }, pagination?: PaginationOptions): Promise<{ providers: (Provider & { user: User; categories: Category[] })[]; total: number; page: number; totalPages: number }> {
+    const page = pagination?.page || 1;
+    const limit = pagination?.limit || 20;
+    const sortBy = pagination?.sortBy || 'rating';
+    const sortOrder = pagination?.sortOrder || 'desc';
+
     let query = db
       .select()
       .from(providers)
-      .innerJoin(users, eq(providers.userId, users.id))
-      .orderBy(desc(providers.averageRating));
+      .innerJoin(users, eq(providers.userId, users.id));
 
     const results = await query;
 
@@ -168,7 +208,30 @@ export class DatabaseStorage implements IStorage {
       );
     }
 
-    return filtered;
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case 'rating':
+          comparison = parseFloat(b.averageRating || "0") - parseFloat(a.averageRating || "0");
+          break;
+        case 'price':
+          comparison = parseFloat(a.hourlyRate || "0") - parseFloat(b.hourlyRate || "0");
+          break;
+        case 'name':
+          comparison = a.user.name.localeCompare(b.user.name);
+          break;
+        default:
+          comparison = parseFloat(b.averageRating || "0") - parseFloat(a.averageRating || "0");
+      }
+      return sortOrder === 'asc' ? -comparison : comparison;
+    });
+
+    const total = filtered.length;
+    const totalPages = Math.ceil(total / limit);
+    const offset = (page - 1) * limit;
+    const paginated = filtered.slice(offset, offset + limit);
+
+    return { providers: paginated, total, page, totalPages };
   }
 
   async getProviderWithDetails(id: string): Promise<(Provider & { user: User; categories: Category[]; services: Service[]; reviews: (Review & { client: User })[] }) | undefined> {
@@ -189,7 +252,7 @@ export class DatabaseStorage implements IStorage {
     const providerServices = await db
       .select()
       .from(services)
-      .where(eq(services.providerId, id));
+      .where(and(eq(services.providerId, id), eq(services.isActive, true)));
 
     const providerReviews = await db
       .select()
@@ -217,7 +280,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addProviderCategory(providerId: string, categoryId: string): Promise<void> {
-    await db.insert(providerCategories).values({ providerId, categoryId });
+    const existing = await db
+      .select()
+      .from(providerCategories)
+      .where(and(eq(providerCategories.providerId, providerId), eq(providerCategories.categoryId, categoryId)));
+    
+    if (existing.length === 0) {
+      await db.insert(providerCategories).values({ providerId, categoryId });
+    }
   }
 
   async removeProviderCategory(providerId: string, categoryId: string): Promise<void> {
@@ -231,8 +301,23 @@ export class DatabaseStorage implements IStorage {
       );
   }
 
+  async getProviderCategories(providerId: string): Promise<Category[]> {
+    const result = await db
+      .select()
+      .from(providerCategories)
+      .innerJoin(categories, eq(providerCategories.categoryId, categories.id))
+      .where(eq(providerCategories.providerId, providerId));
+    
+    return result.map((r) => r.categories);
+  }
+
   async getServices(providerId: string): Promise<Service[]> {
     return db.select().from(services).where(eq(services.providerId, providerId));
+  }
+
+  async getService(id: string): Promise<Service | undefined> {
+    const [service] = await db.select().from(services).where(eq(services.id, id));
+    return service || undefined;
   }
 
   async createService(service: InsertService): Promise<Service> {
@@ -281,10 +366,104 @@ export class DatabaseStorage implements IStorage {
     return rev;
   }
 
+  async canUserReviewProvider(clientId: string, providerId: string): Promise<boolean> {
+    const completedOrders = await db
+      .select()
+      .from(serviceOrders)
+      .where(and(
+        eq(serviceOrders.clientId, clientId),
+        eq(serviceOrders.providerId, providerId),
+        eq(serviceOrders.status, 'completed')
+      ));
+
+    if (completedOrders.length === 0) return false;
+
+    const existingReviews = await db
+      .select()
+      .from(reviews)
+      .where(and(
+        eq(reviews.clientId, clientId),
+        eq(reviews.providerId, providerId)
+      ));
+
+    return completedOrders.length > existingReviews.length;
+  }
+
+  async getServiceOrders(userId: string, role: 'client' | 'provider'): Promise<(ServiceOrder & { 
+    client: User; 
+    provider: Provider & { user: User }; 
+    service?: Service;
+    review?: Review;
+  })[]> {
+    let orders;
+    
+    if (role === 'client') {
+      orders = await db
+        .select()
+        .from(serviceOrders)
+        .where(eq(serviceOrders.clientId, userId))
+        .orderBy(desc(serviceOrders.createdAt));
+    } else {
+      const provider = await this.getProviderByUserId(userId);
+      if (!provider) return [];
+      
+      orders = await db
+        .select()
+        .from(serviceOrders)
+        .where(eq(serviceOrders.providerId, provider.id))
+        .orderBy(desc(serviceOrders.createdAt));
+    }
+
+    return Promise.all(orders.map(async (order) => {
+      const [client] = await db.select().from(users).where(eq(users.id, order.clientId));
+      const [providerRow] = await db
+        .select()
+        .from(providers)
+        .innerJoin(users, eq(providers.userId, users.id))
+        .where(eq(providers.id, order.providerId));
+
+      let service;
+      if (order.serviceId) {
+        const [svc] = await db.select().from(services).where(eq(services.id, order.serviceId));
+        service = svc;
+      }
+
+      const [review] = await db
+        .select()
+        .from(reviews)
+        .where(eq(reviews.orderId, order.id));
+
+      return {
+        ...order,
+        client,
+        provider: { ...providerRow.providers, user: providerRow.users },
+        service,
+        review,
+      };
+    }));
+  }
+
+  async getServiceOrder(id: string): Promise<ServiceOrder | undefined> {
+    const [order] = await db.select().from(serviceOrders).where(eq(serviceOrders.id, id));
+    return order || undefined;
+  }
+
+  async createServiceOrder(order: InsertServiceOrder): Promise<ServiceOrder> {
+    const [ord] = await db.insert(serviceOrders).values(order).returning();
+    return ord;
+  }
+
+  async updateServiceOrder(id: string, data: Partial<InsertServiceOrder>): Promise<ServiceOrder | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+    const [ord] = await db.update(serviceOrders).set(updateData).where(eq(serviceOrders.id, id)).returning();
+    return ord || undefined;
+  }
+
   async getConversations(userId: string): Promise<(Conversation & { 
     client: User; 
     provider: Provider & { user: User };
     lastMessage?: Message;
+    unreadCount?: number;
   })[]> {
     const userProvider = await this.getProviderByUserId(userId);
     
@@ -324,11 +503,21 @@ export class DatabaseStorage implements IStorage {
           .orderBy(desc(messages.createdAt))
           .limit(1);
 
+        const unreadMessages = await db
+          .select()
+          .from(messages)
+          .where(and(
+            eq(messages.conversationId, conv.id),
+            eq(messages.isRead, false),
+            ne(messages.senderId, userId)
+          ));
+
         return {
           ...conv,
           client,
           provider: { ...providerRow.providers, user: providerRow.users },
           lastMessage: lastMsg,
+          unreadCount: unreadMessages.length,
         };
       })
     );
@@ -362,15 +551,29 @@ export class DatabaseStorage implements IStorage {
     return conv;
   }
 
-  async getMessages(conversationId: string): Promise<(Message & { sender: User })[]> {
+  async getMessages(conversationId: string, pagination?: PaginationOptions): Promise<{ messages: (Message & { sender: User })[]; total: number }> {
+    const limit = pagination?.limit || 50;
+    const page = pagination?.page || 1;
+    const offset = (page - 1) * limit;
+
+    const allMessages = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId));
+
     const result = await db
       .select()
       .from(messages)
       .innerJoin(users, eq(messages.senderId, users.id))
       .where(eq(messages.conversationId, conversationId))
-      .orderBy(asc(messages.createdAt));
+      .orderBy(asc(messages.createdAt))
+      .limit(limit)
+      .offset(offset);
 
-    return result.map((r) => ({ ...r.messages, sender: r.users }));
+    return {
+      messages: result.map((r) => ({ ...r.messages, sender: r.users })),
+      total: allMessages.length,
+    };
   }
 
   async createMessage(message: InsertMessage): Promise<Message> {
@@ -391,7 +594,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(messages.conversationId, conversationId),
-          sql`${messages.senderId} != ${userId}`
+          ne(messages.senderId, userId)
         )
       );
   }
