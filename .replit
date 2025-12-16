@@ -47,3 +47,14 @@ args = "npm run all:dev"
 waitForPort = 8081
 ensurePreviewReachable = "/status"
 
+[userenv]
+
+[userenv.shared]
+EXPO_PUBLIC_FIREBASE_API_KEY = "AIzaSyBn6eDmLMlHsHeMKiQy2YX__wD-EYBt8MU"
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN = "servija-34e26.firebaseapp.com"
+EXPO_PUBLIC_FIREBASE_PROJECT_ID = "servija-34e26"
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET = "servija-34e26.firebasestorage.app"
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID = "128919998450"
+EXPO_PUBLIC_FIREBASE_APP_ID = "1:128919998450:web:7bbcb68443a5ccbc3ce56b"
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID = "G-VDH1STKTNK"
+
