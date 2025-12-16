@@ -11,11 +11,11 @@ run = ["node", "server_dist/index.js"]
 
 [[ports]]
 localPort = 5000
-externalPort = 5000
+externalPort = 80
 
 [[ports]]
-localPort = 8081
-externalPort = 80
+localPort = 5001
+externalPort = 3000
 
 [env]
 PORT = "5000"
@@ -35,17 +35,19 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Start dev servers"
+args = "Start application"
 
 [[workflows.workflow]]
-name = "Start dev servers"
+name = "Start application"
 author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run all:dev"
-waitForPort = 8081
-ensurePreviewReachable = "/status"
+args = "npm run start"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
 
 [userenv]
 

@@ -5,7 +5,6 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Image } from "expo-image";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
@@ -18,7 +17,16 @@ import { Spacing, BorderRadius, Shadows } from "@/constants/theme";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { MessagesStackParamList } from "@/navigation/MessagesStackNavigator";
-import { apiRequest, getApiUrl, queryClient } from "@/lib/query-client";
+import { 
+  queryClient, 
+  providersService, 
+  usersService, 
+  servicesService, 
+  reviewsService,
+  favoritesService,
+  conversationsService,
+  categoriesService
+} from "@/lib/query-client";
 
 type RouteType = RouteProp<HomeStackParamList, "Provider">;
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList & RootStackParamList & MessagesStackParamList>;
@@ -32,51 +40,65 @@ export default function ProviderScreen() {
   const { user } = useAuth();
 
   const { data: provider, isLoading } = useQuery({
-    queryKey: ["/api/providers", providerId],
+    queryKey: ["provider", providerId],
     queryFn: async () => {
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/providers/${providerId}`, baseUrl);
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      const providerData = await providersService.get(providerId);
+      if (!providerData) return null;
+      
+      const userData = await usersService.get(providerData.userId);
+      const services = await servicesService.getByProvider(providerId);
+      const reviews = await reviewsService.getByProvider(providerId);
+      const allCategories = await categoriesService.getAll();
+      const providerCategories = allCategories.filter(c => 
+        providerData.categories?.includes(c.id)
+      );
+      
+      const reviewsWithClients = await Promise.all(
+        reviews.map(async (review) => {
+          const client = await usersService.get(review.clientId);
+          return { ...review, client };
+        })
+      );
+      
+      return {
+        ...providerData,
+        user: userData,
+        services,
+        reviews: reviewsWithClients,
+        categories: providerCategories,
+      };
     },
   });
 
   const { data: favoriteData } = useQuery({
-    queryKey: ["/api/favorites/check", user?.id, providerId],
+    queryKey: ["favorites/check", user?.id, providerId],
     queryFn: async () => {
       if (!user) return { isFavorite: false };
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/favorites/check?userId=${user.id}&providerId=${providerId}`, baseUrl);
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      const isFavorite = await favoritesService.isFavorite(user.id, providerId);
+      return { isFavorite };
     },
     enabled: !!user,
   });
 
   const toggleFavoriteMutation = useMutation({
     mutationFn: async () => {
+      if (!user) return;
       if (favoriteData?.isFavorite) {
-        await apiRequest("DELETE", "/api/favorites", { userId: user?.id, providerId });
+        await favoritesService.remove(user.id, providerId);
       } else {
-        await apiRequest("POST", "/api/favorites", { userId: user?.id, providerId });
+        await favoritesService.add(user.id, providerId);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/favorites"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/favorites/check", user?.id, providerId] });
+      queryClient.invalidateQueries({ queryKey: ["favorites"] });
+      queryClient.invalidateQueries({ queryKey: ["favorites/check", user?.id, providerId] });
     },
   });
 
   const handleChat = async () => {
     if (!user) return;
     try {
-      const res = await apiRequest("POST", "/api/conversations", {
-        clientId: user.id,
-        providerId,
-      });
-      const conv = await res.json();
+      const conv = await conversationsService.getOrCreate(user.id, providerId);
       navigation.navigate("MessagesTab" as any, {
         screen: "Chat",
         params: { conversationId: conv.id, providerName: provider?.user?.name || "Chat" },
@@ -132,7 +154,7 @@ export default function ProviderScreen() {
           {provider.isVerified && (
             <View style={[styles.verifiedBadge, { backgroundColor: theme.success }]}>
               <Feather name="check" size={14} color="#fff" />
-              <ThemedText type="caption" style={{ color: "#fff" }}>
+              <ThemedText type="small" style={{ color: "#fff" }}>
                 Verificado
               </ThemedText>
             </View>
@@ -151,7 +173,7 @@ export default function ProviderScreen() {
             {provider.user?.name}
           </ThemedText>
           <View style={styles.ratingRow}>
-            <RatingStars rating={parseFloat(provider.averageRating || "0")} />
+            <RatingStars rating={provider.averageRating || 0} />
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
               ({provider.totalRatings || 0} avaliacoes)
             </ThemedText>
@@ -163,7 +185,7 @@ export default function ProviderScreen() {
             </ThemedText>
           </View>
           <ThemedText type="h4" style={{ color: theme.primary }}>
-            AOA {parseFloat(provider.hourlyRate || "0").toLocaleString()}/h
+            AOA {(provider.hourlyRate || 0).toLocaleString()}/h
           </ThemedText>
         </View>
 
@@ -207,7 +229,7 @@ export default function ProviderScreen() {
                 )}
                 {service.price && (
                   <ThemedText type="small" style={{ color: theme.primary, marginTop: Spacing.xs }}>
-                    AOA {parseFloat(service.price).toLocaleString()}
+                    AOA {service.price.toLocaleString()}
                   </ThemedText>
                 )}
               </View>

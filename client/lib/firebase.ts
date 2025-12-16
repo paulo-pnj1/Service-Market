@@ -31,15 +31,18 @@ import {
   addDoc,
   onSnapshot
 } from "firebase/firestore";
+import Constants from "expo-constants";
+
+const extraConfig = Constants.expoConfig?.extra?.firebase || {};
 
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
-  measurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
+  apiKey: extraConfig.apiKey || "AIzaSyBn6eDmLMlHsHeMKiQy2YX__wD-EYBt8MU",
+  authDomain: extraConfig.authDomain || "servija-34e26.firebaseapp.com",
+  projectId: extraConfig.projectId || "servija-34e26",
+  storageBucket: extraConfig.storageBucket || "servija-34e26.firebasestorage.app",
+  messagingSenderId: extraConfig.messagingSenderId || "128919998450",
+  appId: extraConfig.appId || "1:128919998450:web:7bbcb68443a5ccbc3ce56b",
+  measurementId: extraConfig.measurementId || "G-VDH1STKTNK",
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();

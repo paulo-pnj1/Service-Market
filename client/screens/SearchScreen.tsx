@@ -6,7 +6,7 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { ProviderCard } from "@/components/ProviderCard";
@@ -14,7 +14,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { getApiUrl } from "@/lib/query-client";
+import { providersService, usersService } from "@/lib/query-client";
 
 type RouteType = RouteProp<HomeStackParamList, "Search">;
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList & RootStackParamList>;
@@ -27,8 +27,6 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: "price_desc", label: "Maior preço" },
   { value: "name", label: "Nome A-Z" },
 ];
-
-const PAGE_SIZE = 10;
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
@@ -49,50 +47,38 @@ export default function SearchScreen() {
   const [sortBy, setSortBy] = useState<SortOption>("rating");
   const [showSortModal, setShowSortModal] = useState(false);
 
-  const buildQueryString = (page: number) => {
-    const params = new URLSearchParams();
-    if (query) params.append("search", query);
-    if (filters.categoryId) params.append("categoryId", filters.categoryId);
-    if (filters.city) params.append("city", filters.city);
-    if (filters.minRating) params.append("minRating", filters.minRating.toString());
-    if (filters.maxPrice) params.append("maxPrice", filters.maxPrice.toString());
-    params.append("sortBy", sortBy);
-    params.append("page", page.toString());
-    params.append("limit", PAGE_SIZE.toString());
-    return params.toString();
-  };
+  const { data: providersData = [], isLoading } = useQuery({
+    queryKey: ["providers/search", query, filters, sortBy],
+    queryFn: async () => {
+      let providers = query 
+        ? await providersService.search(query)
+        : await providersService.getAll(filters.city ? { city: filters.city } : undefined);
+      
+      const providersWithUsers = await Promise.all(
+        providers.map(async (provider) => {
+          const user = await usersService.get(provider.userId);
+          return { ...provider, user };
+        })
+      );
 
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-  } = useInfiniteQuery({
-    queryKey: ["/api/providers", query, filters, sortBy],
-    queryFn: async ({ pageParam = 1 }) => {
-      const baseUrl = getApiUrl();
-      const qs = buildQueryString(pageParam);
-      const url = new URL(`/api/providers?${qs}`, baseUrl);
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      const result = await res.json();
-      return Array.isArray(result) ? result : result.data || [];
+      return providersWithUsers.sort((a, b) => {
+        switch (sortBy) {
+          case "rating":
+            return (b.averageRating || 0) - (a.averageRating || 0);
+          case "price_asc":
+            return (a.hourlyRate || 0) - (b.hourlyRate || 0);
+          case "price_desc":
+            return (b.hourlyRate || 0) - (a.hourlyRate || 0);
+          case "name":
+            return (a.user?.name || "").localeCompare(b.user?.name || "");
+          default:
+            return 0;
+        }
+      });
     },
-    getNextPageParam: (lastPage, allPages) => {
-      if (lastPage.length < PAGE_SIZE) return undefined;
-      return allPages.length + 1;
-    },
-    initialPageParam: 1,
   });
 
-  const providers = data?.pages.flat() || [];
-
-  const handleLoadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) {
-      fetchNextPage();
-    }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const providers = Array.isArray(providersData) ? providersData : [];
 
   useEffect(() => {
     navigation.setOptions({
@@ -129,16 +115,6 @@ export default function SearchScreen() {
     setShowSortModal(false);
   };
 
-  const renderFooter = () => {
-    if (!isFetchingNextPage) return null;
-    return (
-      <ActivityIndicator
-        color={theme.primary}
-        style={styles.footerLoader}
-      />
-    );
-  };
-
   return (
     <ThemedView style={styles.container}>
       <View style={[styles.sortBar, { backgroundColor: theme.backgroundSecondary }]}>
@@ -164,9 +140,6 @@ export default function SearchScreen() {
           { paddingTop: Spacing.md, paddingBottom: tabBarHeight + Spacing.xl },
         ]}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderFooter}
         renderItem={({ item }) => (
           <ProviderCard
             provider={item}
@@ -272,9 +245,6 @@ const styles = StyleSheet.create({
   },
   loader: {
     marginTop: Spacing["3xl"],
-  },
-  footerLoader: {
-    marginVertical: Spacing.lg,
   },
   emptyContainer: {
     alignItems: "center",

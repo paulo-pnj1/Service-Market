@@ -6,54 +6,87 @@ import { Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing, BorderRadius, Colors } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+
+type AuthMode = "login" | "register" | "phone";
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { login, register, forgotPassword, resetPassword } = useAuth();
-  const [isLogin, setIsLogin] = useState(true);
+  const { login, register, forgotPassword } = useAuth();
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [role, setRole] = useState<"client" | "provider">("client");
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
-  const [resetToken, setResetToken] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [forgotStep, setForgotStep] = useState<"email" | "reset">("email");
   const [forgotLoading, setForgotLoading] = useState(false);
 
-  const handleSubmit = async () => {
+  const handleEmailLogin = async () => {
     if (!email || !password) {
       Alert.alert("Erro", "Por favor, preencha email e senha");
       return;
     }
 
-    if (!isLogin && !name) {
+    setIsLoading(true);
+    try {
+      const result = await login(email, password);
+      if (!result.success) {
+        Alert.alert("Erro", result.error || "Falha no login");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmailRegister = async () => {
+    if (!email || !password) {
+      Alert.alert("Erro", "Por favor, preencha email e senha");
+      return;
+    }
+    if (!name) {
       Alert.alert("Erro", "Por favor, preencha seu nome");
       return;
     }
 
     setIsLoading(true);
     try {
-      if (isLogin) {
-        const result = await login(email, password);
-        if (!result.success) {
-          Alert.alert("Erro", result.error || "Falha no login");
-        }
-      } else {
-        const result = await register({ email, password, name, city, role });
-        if (!result.success) {
-          Alert.alert("Erro", result.error || "Falha no cadastro");
-        }
+      const result = await register({ email, password, name, phone, city, role });
+      if (!result.success) {
+        Alert.alert("Erro", result.error || "Falha no cadastro");
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (authMode === "login") {
+      handleEmailLogin();
+    } else if (authMode === "register") {
+      handleEmailRegister();
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!forgotEmail.trim()) {
+      Alert.alert("Erro", "Por favor, insira seu email");
+      return;
+    }
+    setForgotLoading(true);
+    const result = await forgotPassword(forgotEmail.trim());
+    setForgotLoading(false);
+    if (result.success) {
+      Alert.alert("Sucesso", result.message || "Email de recuperacao enviado!");
+      setShowForgotPassword(false);
+      setForgotEmail("");
+    } else {
+      Alert.alert("Erro", result.error || "Erro ao solicitar recuperacao");
     }
   };
 
@@ -80,8 +113,54 @@ export default function AuthScreen() {
         </ThemedText>
       </View>
 
+      <View style={styles.authModeContainer}>
+        <Pressable
+          style={[
+            styles.authModeButton,
+            authMode === "login" && { backgroundColor: theme.primary + "20", borderColor: theme.primary },
+          ]}
+          onPress={() => setAuthMode("login")}
+        >
+          <Ionicons 
+            name="mail" 
+            size={20} 
+            color={authMode === "login" ? theme.primary : theme.textSecondary} 
+          />
+          <ThemedText 
+            type="small" 
+            style={{ color: authMode === "login" ? theme.primary : theme.textSecondary, marginLeft: Spacing.xs }}
+          >
+            Email
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.authModeButton,
+            authMode === "phone" && { backgroundColor: theme.primary + "20", borderColor: theme.primary },
+          ]}
+          onPress={() => {
+            Alert.alert(
+              "Em breve", 
+              "Autenticacao por telefone sera disponibilizada em breve. Por enquanto, use email."
+            );
+          }}
+        >
+          <Ionicons 
+            name="call" 
+            size={20} 
+            color={authMode === "phone" ? theme.primary : theme.textSecondary} 
+          />
+          <ThemedText 
+            type="small" 
+            style={{ color: authMode === "phone" ? theme.primary : theme.textSecondary, marginLeft: Spacing.xs }}
+          >
+            Telefone
+          </ThemedText>
+        </Pressable>
+      </View>
+
       <View style={styles.form}>
-        {!isLogin && (
+        {authMode === "register" && (
           <TextInput
             style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
             placeholder="Nome completo"
@@ -91,6 +170,7 @@ export default function AuthScreen() {
             autoCapitalize="words"
           />
         )}
+        
         <TextInput
           style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
           placeholder="Email"
@@ -100,6 +180,7 @@ export default function AuthScreen() {
           keyboardType="email-address"
           autoCapitalize="none"
         />
+        
         <TextInput
           style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
           placeholder="Senha"
@@ -108,8 +189,17 @@ export default function AuthScreen() {
           onChangeText={setPassword}
           secureTextEntry
         />
-        {!isLogin && (
+
+        {authMode === "register" && (
           <>
+            <TextInput
+              style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
+              placeholder="Telefone (opcional)"
+              placeholderTextColor={theme.textSecondary}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+            />
             <TextInput
               style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
               placeholder="Cidade (ex: Luanda)"
@@ -160,14 +250,14 @@ export default function AuthScreen() {
         <Button onPress={handleSubmit} disabled={isLoading} style={styles.submitButton}>
           {isLoading ? (
             <ActivityIndicator color="#fff" />
-          ) : isLogin ? (
+          ) : authMode === "login" ? (
             "Entrar"
           ) : (
             "Criar Conta"
           )}
         </Button>
 
-        {isLogin && (
+        {authMode === "login" && (
           <Pressable onPress={() => setShowForgotPassword(true)} style={styles.forgotButton}>
             <ThemedText type="small" style={{ color: theme.primary }}>
               Esqueceu sua senha?
@@ -175,11 +265,14 @@ export default function AuthScreen() {
           </Pressable>
         )}
 
-        <Pressable onPress={() => setIsLogin(!isLogin)} style={styles.switchButton}>
+        <Pressable 
+          onPress={() => setAuthMode(authMode === "login" ? "register" : "login")} 
+          style={styles.switchButton}
+        >
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {isLogin ? "Nao tem conta? " : "Ja tem conta? "}
+            {authMode === "login" ? "Nao tem conta? " : "Ja tem conta? "}
             <ThemedText type="small" style={{ color: theme.primary }}>
-              {isLogin ? "Cadastre-se" : "Entre"}
+              {authMode === "login" ? "Cadastre-se" : "Entre"}
             </ThemedText>
           </ThemedText>
         </Pressable>
@@ -189,117 +282,33 @@ export default function AuthScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: theme.backgroundSecondary }]}>
             <View style={styles.modalHeader}>
-              <ThemedText type="h3">
-                {forgotStep === "email" ? "Recuperar Senha" : "Nova Senha"}
-              </ThemedText>
-              <Pressable onPress={() => { setShowForgotPassword(false); setForgotStep("email"); }}>
+              <ThemedText type="h3">Recuperar Senha</ThemedText>
+              <Pressable onPress={() => setShowForgotPassword(false)}>
                 <Ionicons name="close" size={24} color={theme.text} />
               </Pressable>
             </View>
 
-            {forgotStep === "email" ? (
-              <View style={styles.modalForm}>
-                <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
-                  Insira seu email para receber o codigo de recuperacao
-                </ThemedText>
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text }]}
-                  placeholder="seu@email.com"
-                  placeholderTextColor={theme.textSecondary}
-                  value={forgotEmail}
-                  onChangeText={setForgotEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                <Button
-                  onPress={async () => {
-                    if (!forgotEmail.trim()) {
-                      Alert.alert("Erro", "Por favor, insira seu email");
-                      return;
-                    }
-                    setForgotLoading(true);
-                    const result = await forgotPassword(forgotEmail.trim());
-                    setForgotLoading(false);
-                    if (result.success) {
-                      Alert.alert("Sucesso", result.message || "Codigo enviado para seu email");
-                      setForgotStep("reset");
-                    } else {
-                      Alert.alert("Erro", result.error || "Erro ao solicitar recuperacao");
-                    }
-                  }}
-                  disabled={forgotLoading}
-                  style={{ marginTop: Spacing.lg }}
-                >
-                  {forgotLoading ? <ActivityIndicator color="#fff" /> : "Enviar Codigo"}
-                </Button>
-              </View>
-            ) : (
-              <View style={styles.modalForm}>
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text }]}
-                  placeholder="Codigo de recuperacao"
-                  placeholderTextColor={theme.textSecondary}
-                  value={resetToken}
-                  onChangeText={setResetToken}
-                  autoCapitalize="none"
-                />
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text, marginTop: Spacing.md }]}
-                  placeholder="Nova senha (min. 6 caracteres)"
-                  placeholderTextColor={theme.textSecondary}
-                  value={newPassword}
-                  onChangeText={setNewPassword}
-                  secureTextEntry
-                />
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text, marginTop: Spacing.md }]}
-                  placeholder="Confirmar senha"
-                  placeholderTextColor={theme.textSecondary}
-                  value={confirmPassword}
-                  onChangeText={setConfirmPassword}
-                  secureTextEntry
-                />
-                <Button
-                  onPress={async () => {
-                    if (!resetToken.trim()) {
-                      Alert.alert("Erro", "Por favor, insira o codigo");
-                      return;
-                    }
-                    if (!newPassword || newPassword.length < 6) {
-                      Alert.alert("Erro", "Senha deve ter pelo menos 6 caracteres");
-                      return;
-                    }
-                    if (newPassword !== confirmPassword) {
-                      Alert.alert("Erro", "Senhas nao coincidem");
-                      return;
-                    }
-                    setForgotLoading(true);
-                    const result = await resetPassword(resetToken.trim(), newPassword);
-                    setForgotLoading(false);
-                    if (result.success) {
-                      Alert.alert("Sucesso", "Senha redefinida! Faca login.");
-                      setShowForgotPassword(false);
-                      setForgotStep("email");
-                      setForgotEmail("");
-                      setResetToken("");
-                      setNewPassword("");
-                      setConfirmPassword("");
-                    } else {
-                      Alert.alert("Erro", result.error || "Erro ao redefinir senha");
-                    }
-                  }}
-                  disabled={forgotLoading}
-                  style={{ marginTop: Spacing.lg }}
-                >
-                  {forgotLoading ? <ActivityIndicator color="#fff" /> : "Redefinir Senha"}
-                </Button>
-                <Pressable onPress={() => setForgotStep("email")} style={{ alignItems: "center", marginTop: Spacing.md }}>
-                  <ThemedText type="small" style={{ color: theme.primary }}>
-                    Enviar novo codigo
-                  </ThemedText>
-                </Pressable>
-              </View>
-            )}
+            <View style={styles.modalForm}>
+              <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+                Insira seu email para receber o link de recuperacao
+              </ThemedText>
+              <TextInput
+                style={[styles.input, { backgroundColor: theme.backgroundRoot, color: theme.text }]}
+                placeholder="seu@email.com"
+                placeholderTextColor={theme.textSecondary}
+                value={forgotEmail}
+                onChangeText={setForgotEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <Button
+                onPress={handleForgotPassword}
+                disabled={forgotLoading}
+                style={{ marginTop: Spacing.lg }}
+              >
+                {forgotLoading ? <ActivityIndicator color="#fff" /> : "Enviar Link"}
+              </Button>
+            </View>
           </View>
         </View>
       </Modal>
@@ -317,7 +326,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
-    marginBottom: Spacing["3xl"],
+    marginBottom: Spacing.xl,
   },
   logo: {
     width: 100,
@@ -329,6 +338,21 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     textAlign: "center",
+  },
+  authModeContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.md,
+    marginBottom: Spacing.xl,
+  },
+  authModeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: "transparent",
   },
   form: {
     gap: Spacing.lg,

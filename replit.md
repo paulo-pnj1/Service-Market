@@ -4,7 +4,7 @@
 
 ServiçoJá is a mobile-first marketplace application connecting clients with local service providers in Angola. The platform enables users to discover, contact, and hire professionals across various service categories including home repairs, cleaning, tutoring, beauty, technology, and more.
 
-The application features a React Native/Expo frontend with an Express.js backend, using PostgreSQL for data persistence. It supports two user types: clients who browse and hire services, and providers who offer their services on the platform.
+The application features a React Native/Expo frontend with Firebase as the backend. It uses Firebase Authentication for user management and Firestore as the database. It supports two user types: clients who browse and hire services, and providers who offer their services on the platform.
 
 ## User Preferences
 
@@ -28,40 +28,36 @@ Path aliases configured in `babel.config.js`:
 - `@/` maps to `./client/`
 - `@shared/` maps to `./shared/`
 
-### Backend Architecture
-- **Framework**: Express.js with TypeScript
-- **Database**: PostgreSQL with Drizzle ORM
-- **Authentication**: Custom JWT implementation with SHA-256 hashing
-- **API Style**: RESTful endpoints prefixed with `/api/`
+### Backend Architecture (Firebase)
+- **Authentication**: Firebase Authentication with email/password and phone number support
+- **Database**: Cloud Firestore (NoSQL)
+- **No Express backend required** - All data access happens directly from the frontend
 
-The backend is organized as:
-- `server/index.ts` - Express app setup with CORS and body parsing
-- `server/routes.ts` - API route definitions with auth middleware
-- `server/storage.ts` - Database access layer using Drizzle ORM
-- `server/db.ts` - Database connection pool setup
-- `server/seed.ts` - Initial data population script
+Key Firebase files:
+- `client/lib/firebase.ts` - Firebase initialization and exports
+- `client/lib/firestore.ts` - Firestore service layer with CRUD operations for all collections
 
-### Database Schema
-Defined in `shared/schema.ts` using Drizzle ORM:
-- `users` - Client and provider accounts with auth credentials
-- `providers` - Extended provider profiles (linked to users)
-- `categories` - Service categories
-- `providerCategories` - Many-to-many relationship
+### Database Collections (Firestore)
+- `users` - Client and provider accounts with profile information
+- `providers` - Extended provider profiles (linked to users via userId)
+- `categories` - Service categories (e.g., cleaning, repairs, tutoring)
 - `services` - Individual services offered by providers
 - `reviews` - Client reviews of providers
-- `conversations` / `messages` - Chat system
-- `favorites` - User saved providers
+- `conversations` - Chat conversations between clients and providers
+- `messages` - Individual chat messages within conversations
+- `favorites` - User saved/favorite providers
 - `serviceOrders` - Service booking records
 
 ### Authentication Flow
-- Email/password authentication with JWT tokens
+- Email/password authentication via Firebase Auth
+- Phone number authentication support (available in UI)
 - Separate registration flows for clients (simplified) and providers (extended profile)
-- Password reset via token-based email recovery
-- Token stored client-side in AsyncStorage
-- Auth state managed via `AuthContext`
+- Password reset via Firebase Auth
+- Auth state managed via `AuthContext` using `onAuthStateChanged` listener
+- User data stored in Firestore `users` collection
 
 ### Key Design Patterns
-- Portuguese (Brazilian/Angolan) language throughout the UI
+- Portuguese (Angolan) language throughout the UI
 - Primary color: `#FF6B35` (orange)
 - Mobile-first design with bottom tab navigation
 - Blur effects on iOS tab bar and headers
@@ -69,24 +65,38 @@ Defined in `shared/schema.ts` using Drizzle ORM:
 
 ## External Dependencies
 
-### Database
-- **PostgreSQL**: Primary data store, connection via `DATABASE_URL` environment variable
-- **Drizzle ORM**: Type-safe database queries and schema management
+### Firebase Services
+- **Firebase Authentication**: User authentication (email/password, phone number)
+- **Cloud Firestore**: Primary data store (NoSQL document database)
+- Firebase project: `servija-34e26`
 
-### Third-Party Services
+### Third-Party Libraries
 - **Expo**: Mobile app development platform
 - **React Navigation**: Navigation infrastructure
 - **TanStack Query**: Data fetching and caching
-- **AsyncStorage**: Local token persistence
+- **Zod**: Schema validation for data integrity
 
-### Environment Variables Required
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - Secret key for JWT signing (defaults to placeholder in dev)
-- `EXPO_PUBLIC_DOMAIN` - API server domain for client requests
-- `REPLIT_DEV_DOMAIN` - Development domain for CORS
+### Firebase Configuration
+Firebase configuration is stored in `app.json` under `expo.extra.firebase`. The Firebase API key is public by design (security is enforced via Firestore Security Rules).
 
 ### Development Commands
-- `npm run all:dev` - Start both Expo and server in development
-- `npm run db:push` - Push schema changes to database
-- `npm run server:dev` - Run backend only
-- `npm run expo:dev` - Run Expo development server
+- `npm run start` - Start Expo development server (web on port 5000)
+- Web app will be available at the Replit dev URL
+
+## Recent Changes
+
+### December 2024 - Firebase Migration
+- Migrated from Express.js backend to Firebase (direct frontend-to-Firebase communication)
+- Replaced PostgreSQL/Drizzle ORM with Cloud Firestore
+- Implemented Firebase Authentication (email/password)
+- Added phone number authentication UI support
+- Created Firestore service layer (`client/lib/firestore.ts`) for all CRUD operations
+- Updated all screens to use Firestore queries directly via React Query
+- Removed backend server directory and simplified package.json
+
+### Key Files Modified
+- `client/lib/firebase.ts` - Firebase initialization
+- `client/lib/firestore.ts` - Firestore CRUD services
+- `client/lib/query-client.ts` - Updated for Firestore
+- `client/contexts/AuthContext.tsx` - Firebase Auth integration
+- All screen components updated to use Firestore services

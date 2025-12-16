@@ -11,7 +11,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
+import { serviceOrdersService, servicesService, providersService, usersService } from "@/lib/query-client";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
@@ -23,15 +23,15 @@ type NavigationProp = CompositeNavigationProp<
 interface Order {
   id: string;
   status: string;
-  scheduledDate?: string;
-  completedDate?: string;
+  scheduledDate?: Date;
+  completedDate?: Date;
   notes?: string;
-  totalPrice?: string;
-  createdAt: string;
+  totalPrice?: number;
+  createdAt: Date;
   service: {
     id: string;
     name: string;
-    price: string;
+    price: number;
   };
   provider: {
     id: string;
@@ -68,14 +68,32 @@ export default function OrderHistoryScreen() {
   const { data: orders = [], isLoading } = useQuery<Order[]>({
     queryKey: ["orders", user?.id],
     queryFn: async () => {
-      const res = await apiRequest("GET", "/api/orders");
-      return res.json();
+      if (!user) return [];
+      const ordersData = await serviceOrdersService.getByClient(user.id);
+      
+      const ordersWithDetails = await Promise.all(
+        ordersData.map(async (order) => {
+          const service = await servicesService.get(order.serviceId);
+          const provider = await providersService.get(order.providerId);
+          const providerUser = provider ? await usersService.get(provider.userId) : null;
+          
+          return {
+            ...order,
+            service: service || { id: order.serviceId, name: "Servico", price: 0 },
+            provider: {
+              id: order.providerId,
+              user: providerUser || { name: "Prestador" },
+            },
+          };
+        })
+      );
+      
+      return ordersWithDetails;
     },
     enabled: !!user?.id,
   });
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+  const formatDate = (date: Date) => {
     return date.toLocaleDateString("pt-AO", {
       day: "2-digit",
       month: "short",

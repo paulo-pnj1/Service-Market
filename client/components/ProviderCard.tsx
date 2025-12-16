@@ -10,13 +10,13 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 interface ProviderCardProps {
   provider: {
     id: string;
-    user?: { name: string };
+    user?: { name: string } | null;
     city: string;
-    hourlyRate?: string;
-    averageRating?: string;
+    hourlyRate?: string | number;
+    averageRating?: string | number;
     totalRatings?: number;
     isVerified?: boolean;
-    categories?: { name: string }[];
+    categories?: { name: string }[] | string[];
   };
   onPress?: () => void;
   style?: ViewStyle;
@@ -41,8 +41,12 @@ export function ProviderCard({ provider, onPress, style, horizontal }: ProviderC
     scale.value = withSpring(1, { damping: 15, stiffness: 150 });
   };
 
-  const rating = parseFloat(provider.averageRating || "0");
-  const price = parseFloat(provider.hourlyRate || "0");
+  const rating = typeof provider.averageRating === "number" 
+    ? provider.averageRating 
+    : parseFloat(provider.averageRating || "0");
+  const price = typeof provider.hourlyRate === "number"
+    ? provider.hourlyRate
+    : parseFloat(provider.hourlyRate || "0");
 
   return (
     <AnimatedPressable
@@ -69,17 +73,17 @@ export function ProviderCard({ provider, onPress, style, horizontal }: ProviderC
       </View>
       <View style={styles.content}>
         <ThemedText type="body" numberOfLines={1} style={styles.name}>
-          {provider.user?.name}
+          {provider.user?.name || "Prestador"}
         </ThemedText>
         <View style={styles.ratingRow}>
           <RatingStars rating={rating} size={12} />
-          <ThemedText type="caption" style={{ color: theme.textSecondary }}>
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
             ({provider.totalRatings || 0})
           </ThemedText>
         </View>
         <View style={styles.locationRow}>
           <Feather name="map-pin" size={12} color={theme.textSecondary} />
-          <ThemedText type="caption" style={{ color: theme.textSecondary }} numberOfLines={1}>
+          <ThemedText type="small" style={{ color: theme.textSecondary }} numberOfLines={1}>
             {provider.city}
           </ThemedText>
         </View>

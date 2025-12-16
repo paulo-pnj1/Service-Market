@@ -42,6 +42,17 @@
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "firebase": {
+        "apiKey": "AIzaSyBn6eDmLMlHsHeMKiQy2YX__wD-EYBt8MU",
+        "authDomain": "servija-34e26.firebaseapp.com",
+        "projectId": "servija-34e26",
+        "storageBucket": "servija-34e26.firebasestorage.app",
+        "messagingSenderId": "128919998450",
+        "appId": "1:128919998450:web:7bbcb68443a5ccbc3ce56b",
+        "measurementId": "G-VDH1STKTNK"
+      }
     }
   }
 }

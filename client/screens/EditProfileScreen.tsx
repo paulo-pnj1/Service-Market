@@ -12,7 +12,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
+import { usersService, providersService } from "@/lib/query-client";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
@@ -31,46 +31,53 @@ export default function EditProfileScreen() {
   const [whatsapp, setWhatsapp] = useState(provider?.whatsapp || "");
   const [facebook, setFacebook] = useState(provider?.facebook || "");
   const [description, setDescription] = useState(provider?.description || "");
-  const [hourlyRate, setHourlyRate] = useState(provider?.hourlyRate || "");
+  const [hourlyRate, setHourlyRate] = useState(provider?.hourlyRate?.toString() || "");
 
   const isProviderRole = user?.role === "provider";
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      // Atualizar dados do usuário sempre
-      const userRes = await apiRequest("PUT", `/api/users/${user?.id}`, { name, phone, city });
-      const userData = await userRes.json();
+      if (!user) throw new Error("User not authenticated");
+      
+      await usersService.update(user.id, { name, phone, city });
+      const updatedUser = await usersService.get(user.id);
 
-      let providerData = null;
+      let updatedProvider = null;
 
-      // Se for prestador
-      if (isProviderRole) {
+      if (isProviderRole && provider) {
         const providerPayload = {
           whatsapp,
           facebook,
           description,
-          hourlyRate: hourlyRate ? Number(hourlyRate) : null,
+          hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
           city,
         };
 
-        if (provider) {
-          // Provider já existe → PUT (atualizar)
-          const providerRes = await apiRequest("PUT", `/api/providers/${provider.id}`, providerPayload);
-          providerData = await providerRes.json();
-        } else {
-          // Provider NÃO existe ainda (conta antiga) → POST (criar novo)
-          const providerRes = await apiRequest("POST", "/api/providers", providerPayload);
-          providerData = await providerRes.json();
-        }
+        await providersService.update(provider.id, providerPayload);
+        updatedProvider = await providersService.get(provider.id);
+      } else if (isProviderRole && !provider) {
+        const providerPayload = {
+          userId: user.id,
+          whatsapp,
+          facebook,
+          description,
+          hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
+          city,
+          isVerified: false,
+          isOnline: true,
+          totalRatings: 0,
+          averageRating: 0,
+        };
+
+        const newProviderId = await providersService.create(providerPayload);
+        updatedProvider = await providersService.get(newProviderId);
       }
 
-      return { user: userData, provider: providerData };
+      return { user: updatedUser, provider: updatedProvider };
     },
     onSuccess: (data) => {
-      updateUser(data.user);
-      if (data.provider) {
-        updateProvider(data.provider);
-      }
+      if (data.user) updateUser(data.user);
+      if (data.provider) updateProvider(data.provider);
       Alert.alert("Sucesso", "Perfil atualizado com sucesso");
       navigation.goBack();
     },

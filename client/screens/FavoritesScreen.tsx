@@ -14,7 +14,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing } from "@/constants/theme";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
-import { getApiUrl } from "@/lib/query-client";
+import { favoritesService, providersService, usersService } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList>;
 
@@ -27,14 +27,19 @@ export default function FavoritesScreen() {
   const { user } = useAuth();
 
   const { data: favorites = [], isLoading } = useQuery({
-    queryKey: ["/api/favorites", user?.id],
+    queryKey: ["favorites", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/favorites?userId=${user.id}`, baseUrl);
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      const favs = await favoritesService.getByUser(user.id);
+      const favsWithProviders = await Promise.all(
+        favs.map(async (fav) => {
+          const provider = await providersService.get(fav.providerId);
+          if (!provider) return null;
+          const providerUser = await usersService.get(provider.userId);
+          return { ...fav, provider: { ...provider, user: providerUser } };
+        })
+      );
+      return favsWithProviders.filter(Boolean);
     },
     enabled: !!user,
   });
@@ -50,7 +55,7 @@ export default function FavoritesScreen() {
     <ThemedView style={styles.container}>
       <FlatList
         data={favorites}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: any) => item.id}
         numColumns={2}
         columnWrapperStyle={favorites.length > 1 ? styles.row : undefined}
         contentContainerStyle={[
@@ -58,7 +63,7 @@ export default function FavoritesScreen() {
           { paddingTop: headerHeight + Spacing.lg, paddingBottom: tabBarHeight + Spacing.xl },
         ]}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
-        renderItem={({ item }) => (
+        renderItem={({ item }: { item: any }) => (
           <ProviderCard
             provider={item.provider}
             onPress={() => handleProviderPress(item.provider.id)}

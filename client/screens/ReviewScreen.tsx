@@ -13,7 +13,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { apiRequest, queryClient } from "@/lib/query-client";
+import { queryClient, reviewsService, providersService } from "@/lib/query-client";
 
 type RouteType = RouteProp<RootStackParamList, "Review">;
 
@@ -31,15 +31,27 @@ export default function ReviewScreen() {
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/reviews", {
+      if (!user) throw new Error("User not authenticated");
+      
+      await reviewsService.create({
         providerId,
-        clientId: user?.id,
+        clientId: user.id,
         rating,
-        comment: comment.trim() || null,
+        comment: comment.trim() || undefined,
       });
+
+      const provider = await providersService.get(providerId);
+      if (provider) {
+        const newTotalRatings = (provider.totalRatings || 0) + 1;
+        const newAverage = ((provider.averageRating || 0) * (provider.totalRatings || 0) + rating) / newTotalRatings;
+        await providersService.update(providerId, {
+          averageRating: newAverage,
+          totalRatings: newTotalRatings,
+        });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/providers", providerId] });
+      queryClient.invalidateQueries({ queryKey: ["provider", providerId] });
       Alert.alert("Sucesso", "Avaliacao enviada com sucesso!");
       navigation.goBack();
     },
@@ -113,7 +125,7 @@ export default function ReviewScreen() {
             textAlignVertical="top"
             maxLength={500}
           />
-          <ThemedText type="caption" style={{ color: theme.textSecondary, textAlign: "right", marginTop: Spacing.xs }}>
+          <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "right", marginTop: Spacing.xs }}>
             {comment.length}/500
           </ThemedText>
         </View>

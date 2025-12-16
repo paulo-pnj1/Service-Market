@@ -13,7 +13,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { MessagesStackParamList } from "@/navigation/MessagesStackNavigator";
-import { getApiUrl } from "@/lib/query-client";
+import { conversationsService, providersService, usersService } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<MessagesStackParamList>;
 
@@ -26,20 +26,28 @@ export default function ConversationsScreen() {
   const { user } = useAuth();
 
   const { data: conversations = [], isLoading } = useQuery({
-    queryKey: ["/api/conversations", user?.id],
+    queryKey: ["conversations", user?.id],
     queryFn: async () => {
       if (!user) return [];
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/conversations?userId=${user.id}`, baseUrl);
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      const convs = await conversationsService.getByUser(user.id);
+      const convsWithDetails = await Promise.all(
+        convs.map(async (conv) => {
+          const provider = await providersService.get(conv.providerId);
+          const providerUser = provider ? await usersService.get(provider.userId) : null;
+          const client = await usersService.get(conv.clientId);
+          return {
+            ...conv,
+            provider: provider ? { ...provider, user: providerUser } : null,
+            client,
+          };
+        })
+      );
+      return convsWithDetails;
     },
     enabled: !!user,
   });
 
-  const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
+  const formatTime = (date: Date) => {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -62,8 +70,7 @@ export default function ConversationsScreen() {
 
   const renderConversation = ({ item }: { item: any }) => {
     const otherName = user?.role === "provider" ? item.client?.name : item.provider?.user?.name;
-    const lastMessage = item.lastMessage?.content || "Sem mensagens";
-    const time = item.lastMessage?.createdAt ? formatTime(item.lastMessage.createdAt) : "";
+    const time = item.lastMessageAt ? formatTime(item.lastMessageAt) : "";
 
     return (
       <Pressable
@@ -85,7 +92,7 @@ export default function ConversationsScreen() {
             </ThemedText>
           </View>
           <ThemedText type="small" numberOfLines={1} style={{ color: theme.textSecondary }}>
-            {lastMessage}
+            Toque para ver a conversa
           </ThemedText>
         </View>
         <Feather name="chevron-right" size={20} color={theme.textSecondary} />

@@ -10,7 +10,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { MessagesStackParamList } from "@/navigation/MessagesStackNavigator";
-import { apiRequest, getApiUrl, queryClient } from "@/lib/query-client";
+import { queryClient, messagesService } from "@/lib/query-client";
 
 type RouteType = RouteProp<MessagesStackParamList, "Chat">;
 
@@ -24,28 +24,25 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   const { data: messages = [], refetch } = useQuery({
-    queryKey: ["/api/conversations", conversationId, "messages"],
-    queryFn: async () => {
-      const baseUrl = getApiUrl();
-      const url = new URL(`/api/conversations/${conversationId}/messages`, baseUrl);
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
+    queryKey: ["messages", conversationId],
+    queryFn: () => messagesService.getByConversation(conversationId),
     refetchInterval: 3000,
   });
 
   const sendMutation = useMutation({
     mutationFn: async (content: string) => {
-      await apiRequest("POST", "/api/messages", {
+      if (!user) throw new Error("User not authenticated");
+      await messagesService.create({
         conversationId,
-        senderId: user?.id,
+        senderId: user.id,
         content,
+        isRead: false,
       });
     },
     onSuccess: () => {
       setMessage("");
       refetch();
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
   });
 
@@ -63,8 +60,8 @@ export default function ChatScreen() {
     }
   };
 
-  const formatTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleTimeString("pt-AO", { hour: "2-digit", minute: "2-digit" });
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString("pt-AO", { hour: "2-digit", minute: "2-digit" });
   };
 
   const renderMessage = ({ item }: { item: any }) => {

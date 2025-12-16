@@ -14,6 +14,7 @@ import { CategoryChip } from "@/components/CategoryChip";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
+import { categoriesService, providersService, usersService } from "@/lib/query-client";
 
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList>;
 
@@ -24,15 +25,25 @@ export default function HomeScreen() {
   const navigation = useNavigation<NavigationProp>();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: categories = [], isLoading: categoriesLoading } = useQuery<any[]>({
-    queryKey: ["/api/categories"],
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ["categories"],
+    queryFn: () => categoriesService.getAll(),
   });
 
-  const { data: providersData, isLoading: providersLoading } = useQuery<any[]>({
-    queryKey: ["/api/providers"],
+  const { data: providersData = [], isLoading: providersLoading } = useQuery({
+    queryKey: ["providers"],
+    queryFn: async () => {
+      const providers = await providersService.getAll();
+      const providersWithUsers = await Promise.all(
+        providers.map(async (provider) => {
+          const user = await usersService.get(provider.userId);
+          return { ...provider, user };
+        })
+      );
+      return providersWithUsers;
+    },
   });
 
-  // Fix: Ensure providers is always an array
   const providers = Array.isArray(providersData) ? providersData : [];
   const featuredProviders = providers.slice(0, 6);
 

@@ -19,13 +19,13 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
+import { servicesService } from "@/lib/query-client";
 
 interface Service {
   id: string;
   name: string;
   description?: string;
-  price: string;
+  price: number;
   duration?: number;
   isActive: boolean;
 }
@@ -47,16 +47,20 @@ export default function ServiceManagementScreen() {
   const { data: services = [], isLoading } = useQuery<Service[]>({
     queryKey: ["provider-services", provider?.id],
     queryFn: async () => {
-      const res = await apiRequest("GET", `/api/providers/${provider?.id}/services`);
-      return res.json();
+      if (!provider) return [];
+      return servicesService.getByProvider(provider.id);
     },
     enabled: !!provider?.id,
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await apiRequest("POST", `/api/providers/${provider?.id}/services`, data);
-      return res.json();
+      if (!provider) throw new Error("Provider not found");
+      return servicesService.create({
+        ...data,
+        providerId: provider.id,
+        isActive: true,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["provider-services"] });
@@ -70,8 +74,7 @@ export default function ServiceManagementScreen() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const res = await apiRequest("PUT", `/api/services/${id}`, data);
-      return res.json();
+      await servicesService.update(id, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["provider-services"] });
@@ -85,7 +88,7 @@ export default function ServiceManagementScreen() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/services/${id}`);
+      await servicesService.delete(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["provider-services"] });
@@ -101,7 +104,7 @@ export default function ServiceManagementScreen() {
       setEditingService(service);
       setName(service.name);
       setDescription(service.description || "");
-      setPrice(service.price);
+      setPrice(service.price.toString());
       setDuration(service.duration?.toString() || "");
     } else {
       setEditingService(null);
@@ -131,7 +134,7 @@ export default function ServiceManagementScreen() {
     const serviceData = {
       name: name.trim(),
       description: description.trim() || undefined,
-      price: price.trim(),
+      price: parseFloat(price),
       duration: duration ? parseInt(duration) : undefined,
     };
 

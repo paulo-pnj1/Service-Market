@@ -1,9 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const API_URL = process.env.EXPO_PUBLIC_DOMAIN 
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}` 
-  : "";
+import { 
+  auth, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut, 
+  sendPasswordResetEmail,
+  updateProfile,
+  onAuthStateChanged,
+  FirebaseUser
+} from "@/lib/firebase";
+import { usersService, providersService, UserData, ProviderData } from "@/lib/firestore";
 
 interface User {
   id: string;
@@ -19,20 +26,19 @@ interface Provider {
   id: string;
   userId: string;
   description?: string;
-  hourlyRate?: string;
+  hourlyRate?: number;
   city: string;
   whatsapp?: string;
   facebook?: string;
   isVerified?: boolean;
   isOnline?: boolean;
   totalRatings?: number;
-  averageRating?: string;
+  averageRating?: number;
 }
 
 interface AuthContextType {
   user: User | null;
   provider: Provider | null;
-  token: string | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   register: (data: RegisterData) => Promise<{ success: boolean; error?: string }>;
@@ -41,8 +47,6 @@ interface AuthContextType {
   updateProvider: (data: Partial<Provider>) => void;
   setProvider: (provider: Provider | null) => void;
   forgotPassword: (email: string) => Promise<{ success: boolean; error?: string; message?: string }>;
-  resetPassword: (token: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  apiRequest: (method: string, endpoint: string, body?: any) => Promise<Response>;
 }
 
 interface RegisterData {
@@ -61,186 +65,180 @@ const AUTH_STORAGE_KEY = "@servicoja_auth";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [provider, setProviderState] = useState<Provider | null>(null);
-  const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    loadStoredAuth();
-  }, []);
-
-  const loadStoredAuth = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-      if (stored) {
-        const { user, provider, token } = JSON.parse(stored);
-        setUser(user);
-        setProviderState(provider);
-        setToken(token);
-      }
-    } catch (error) {
-      console.error("Error loading auth:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const saveAuth = async (user: User | null, provider: Provider | null, token: string | null) => {
-    try {
-      if (user && token) {
-        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ user, provider, token }));
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        await loadUserData(firebaseUser);
       } else {
+        setUser(null);
+        setProviderState(null);
         await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       }
-    } catch (error) {
-      console.error("Error saving auth:", error);
-    }
-  };
-
-  const apiRequest = async (method: string, endpoint: string, body?: any): Promise<Response> => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-
-    const response = await fetch(`${API_URL}${endpoint}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-      credentials: "include",
+      setIsLoading(false);
     });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: "Erro desconhecido" }));
-      throw new Error(error.message || `Erro ${response.status}`);
-    }
+    return () => unsubscribe();
+  }, []);
 
-    return response;
+  const loadUserData = async (firebaseUser: FirebaseUser) => {
+    try {
+      const userData = await usersService.get(firebaseUser.uid);
+      if (userData) {
+        const userObj: User = {
+          id: userData.id,
+          email: userData.email,
+          name: userData.name,
+          phone: userData.phone,
+          city: userData.city,
+          photoUrl: userData.photoUrl,
+          role: userData.role,
+        };
+        setUser(userObj);
+
+        if (userData.role === "provider") {
+          const providerData = await providersService.getByUserId(userData.id);
+          if (providerData) {
+            setProviderState({
+              id: providerData.id,
+              userId: providerData.userId,
+              description: providerData.description,
+              hourlyRate: providerData.hourlyRate,
+              city: providerData.city,
+              whatsapp: providerData.whatsapp,
+              facebook: providerData.facebook,
+              isVerified: providerData.isVerified,
+              isOnline: providerData.isOnline,
+              totalRatings: providerData.totalRatings,
+              averageRating: providerData.averageRating,
+            });
+          }
+        }
+
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ userId: firebaseUser.uid }));
+      }
+    } catch (error) {
+      console.error("Error loading user data:", error);
+    }
   };
 
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include",
-      });
-
-      const data = await response.json();
-      
-      if (!response.ok) {
-        return { success: false, error: data.message || "Erro ao fazer login" };
-      }
-      
-      setUser(data.user);
-      setProviderState(data.provider || null);
-      setToken(data.token);
-      await saveAuth(data.user, data.provider || null, data.token);
-      
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await loadUserData(userCredential.user);
       return { success: true };
     } catch (error: any) {
-      const message = error.message || "Erro ao fazer login";
+      let message = "Erro ao fazer login";
+      if (error.code === "auth/user-not-found" || error.code === "auth/wrong-password") {
+        message = "Email ou senha incorretos";
+      } else if (error.code === "auth/invalid-email") {
+        message = "Email invalido";
+      } else if (error.code === "auth/too-many-requests") {
+        message = "Muitas tentativas. Tente novamente mais tarde";
+      }
       return { success: false, error: message };
     }
   };
 
   const register = async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-        credentials: "include",
+      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      
+      await updateProfile(userCredential.user, { displayName: data.name });
+
+      await usersService.create(userCredential.user.uid, {
+        email: data.email,
+        name: data.name,
+        phone: data.phone,
+        city: data.city,
+        role: data.role,
       });
 
-      const result = await response.json();
-      
-      if (!response.ok) {
-        return { success: false, error: result.message || "Erro ao criar conta" };
+      if (data.role === "provider") {
+        await providersService.create({
+          userId: userCredential.user.uid,
+          city: data.city || "Luanda",
+          isVerified: false,
+          isOnline: false,
+          totalRatings: 0,
+          averageRating: 0,
+        });
       }
-      
-      setUser(result.user);
-      setToken(result.token);
-      await saveAuth(result.user, null, result.token);
-      
+
+      await loadUserData(userCredential.user);
       return { success: true };
     } catch (error: any) {
-      const message = error.message || "Erro ao criar conta";
+      let message = "Erro ao criar conta";
+      if (error.code === "auth/email-already-in-use") {
+        message = "Este email ja esta em uso";
+      } else if (error.code === "auth/weak-password") {
+        message = "Senha muito fraca. Use pelo menos 6 caracteres";
+      } else if (error.code === "auth/invalid-email") {
+        message = "Email invalido";
+      }
       return { success: false, error: message };
     }
   };
 
   const forgotPassword = async (email: string): Promise<{ success: boolean; error?: string; message?: string }> => {
     try {
-      const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-        credentials: "include",
-      });
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        return { success: false, error: result.message };
-      }
-      
-      return { success: true, message: result.message };
+      await sendPasswordResetEmail(auth, email);
+      return { success: true, message: "Email de recuperacao enviado! Verifique sua caixa de entrada." };
     } catch (error: any) {
-      return { success: false, error: error.message || "Erro ao solicitar redefinição de senha" };
-    }
-  };
-
-  const resetPassword = async (resetToken: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken, password }),
-        credentials: "include",
-      });
-
-      const result = await response.json();
-      
-      if (!response.ok) {
-        return { success: false, error: result.message };
+      let message = "Erro ao solicitar recuperacao de senha";
+      if (error.code === "auth/user-not-found") {
+        message = "Nenhuma conta encontrada com este email";
+      } else if (error.code === "auth/invalid-email") {
+        message = "Email invalido";
       }
-      
-      return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message || "Erro ao redefinir senha" };
+      return { success: false, error: message };
     }
   };
 
   const logout = async () => {
-    setUser(null);
-    setProviderState(null);
-    setToken(null);
-    await saveAuth(null, null, null);
-  };
-
-  const updateUser = (data: Partial<User>) => {
-    if (user) {
-      const updated = { ...user, ...data };
-      setUser(updated);
-      saveAuth(updated, provider, token);
+    try {
+      await signOut(auth);
+      setUser(null);
+      setProviderState(null);
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+    } catch (error) {
+      console.error("Error logging out:", error);
     }
   };
 
-  const updateProvider = (data: Partial<Provider>) => {
+  const updateUser = async (data: Partial<User>) => {
+    if (user) {
+      const updated = { ...user, ...data };
+      setUser(updated);
+      try {
+        const updateData: Record<string, any> = {};
+        if (data.name !== undefined) updateData.name = data.name;
+        if (data.phone !== undefined) updateData.phone = data.phone;
+        if (data.city !== undefined) updateData.city = data.city;
+        if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl;
+        if (data.role !== undefined) updateData.role = data.role as "client" | "provider";
+        await usersService.update(user.id, updateData);
+      } catch (error) {
+        console.error("Error updating user:", error);
+      }
+    }
+  };
+
+  const updateProvider = async (data: Partial<Provider>) => {
     if (provider) {
       const updated = { ...provider, ...data };
       setProviderState(updated);
-      saveAuth(user, updated, token);
+      try {
+        await providersService.update(provider.id, data);
+      } catch (error) {
+        console.error("Error updating provider:", error);
+      }
     }
   };
 
   const setProvider = (newProvider: Provider | null) => {
     setProviderState(newProvider);
-    saveAuth(user, newProvider, token);
   };
 
   return (
@@ -248,7 +246,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         provider,
-        token,
         isLoading,
         login,
         register,
@@ -257,8 +254,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updateProvider,
         setProvider,
         forgotPassword,
-        resetPassword,
-        apiRequest,
       }}
     >
       {children}

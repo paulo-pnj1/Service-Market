@@ -11,6 +11,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
+import { categoriesService } from "@/lib/query-client";
 
 type RouteType = RouteProp<RootStackParamList, "Filter">;
 
@@ -27,7 +28,8 @@ export default function FilterScreen() {
   const [maxPrice, setMaxPrice] = useState(route.params?.maxPrice?.toString() || "");
 
   const { data: categories = [] } = useQuery({
-    queryKey: ["/api/categories"],
+    queryKey: ["categories"],
+    queryFn: () => categoriesService.getAll(),
   });
 
   const handleApply = () => {
