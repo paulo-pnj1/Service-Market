@@ -97,6 +97,24 @@ Firebase configuration is stored in `app.json` under `expo.extra.firebase`. The 
 ### Key Files Modified
 - `client/lib/firebase.ts` - Firebase initialization
 - `client/lib/firestore.ts` - Firestore CRUD services
+- `client/lib/seedFirestore.ts` - Seed script for initializing Firestore collections
 - `client/lib/query-client.ts` - Updated for Firestore
 - `client/contexts/AuthContext.tsx` - Firebase Auth integration
+- `client/screens/AdminSetupScreen.tsx` - Admin screen for Firebase configuration and seed
 - All screen components updated to use Firestore services
+
+### Firebase Console Setup Required
+1. Enable "Email/Password" authentication in Firebase Console → Authentication → Sign-in method
+2. (Optional) Enable "Phone" authentication for phone number login
+3. Configure Firestore Security Rules for development:
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+4. Use the "Configuração Firebase" link in the login screen to initialize collections and test connection

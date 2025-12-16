@@ -4,12 +4,14 @@ import MainTabNavigator from "@/navigation/MainTabNavigator";
 import AuthScreen from "@/screens/AuthScreen";
 import FilterScreen from "@/screens/FilterScreen";
 import ReviewScreen from "@/screens/ReviewScreen";
+import AdminSetupScreen from "@/screens/AdminSetupScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useAuth } from "@/contexts/AuthContext";
 import { ActivityIndicator, View } from "react-native";
 
 export type RootStackParamList = {
   Auth: undefined;
+  AdminSetup: undefined;
   Main: undefined;
   Filter: { categoryId?: string; city?: string; minRating?: number; maxPrice?: number };
   Review: { providerId: string; providerName: string };
@@ -32,11 +34,18 @@ export default function RootStackNavigator() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
       {!user ? (
-        <Stack.Screen
-          name="Auth"
-          component={AuthScreen}
-          options={{ headerShown: false }}
-        />
+        <>
+          <Stack.Screen
+            name="Auth"
+            component={AuthScreen}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="AdminSetup"
+            component={AdminSetupScreen}
+            options={{ headerTitle: "Configuração Firebase" }}
+          />
+        </>
       ) : (
         <>
           <Stack.Screen

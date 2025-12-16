@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { View, StyleSheet, TextInput, Pressable, ScrollView, Alert, ActivityIndicator, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
@@ -8,13 +10,17 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 type AuthMode = "login" | "register" | "phone";
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AuthScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const { login, register, forgotPassword } = useAuth();
+  const navigation = useNavigation<NavigationProp>();
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -276,6 +282,16 @@ export default function AuthScreen() {
             </ThemedText>
           </ThemedText>
         </Pressable>
+
+        <Pressable 
+          onPress={() => navigation.navigate("AdminSetup")} 
+          style={styles.adminButton}
+        >
+          <Ionicons name="settings-outline" size={16} color={theme.textSecondary} />
+          <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.xs, fontSize: 12 }}>
+            Configuração Firebase
+          </ThemedText>
+        </Pressable>
       </View>
 
       <Modal visible={showForgotPassword} animationType="slide" transparent>
@@ -388,6 +404,13 @@ const styles = StyleSheet.create({
   switchButton: {
     alignItems: "center",
     paddingVertical: Spacing.lg,
+  },
+  adminButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.xl,
   },
   modalOverlay: {
     flex: 1,
