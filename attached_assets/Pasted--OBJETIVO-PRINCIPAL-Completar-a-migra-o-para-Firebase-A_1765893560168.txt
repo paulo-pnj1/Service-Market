@@ -1,0 +1,64 @@
+**OBJETIVO PRINCIPAL:**
+Completar a migração para Firebase Authentication e Firestore, removendo completamente o backend server.
+
+**CONTEXTO ATUAL:**
+- Backend removido (Express, PostgreSQL, Drizzle)
+- Configuração Firebase implementada (firebase.ts)
+- Serviço Firestore criado (firestore.ts)
+- Contexto de autenticação migrado para Firebase Auth
+- Todas as telas atualizadas para usar Firestore diretamente
+- App mostrando tela de login com opções de Email e Telefone
+
+**PENDÊNCIAS CRÍTICAS A RESOLVER:**
+
+1. **CONFIGURAÇÃO FIREBASE CONSOLE:**
+   - Habilitar método "Email/Senha" em Authentication → Sign-in method
+   - Habilitar método "Phone" em Authentication → Sign-in method
+   - Configurar reCAPTCHA para autenticação por telefone
+
+2. **REGRAS DE SEGURANÇA FIRESTORE:**
+   - As regras atuais estão bloqueando TODO acesso: `allow read, write: if false`
+   - Implementar regras seguras mas funcionais para desenvolvimento
+
+3. **ESTRUTURA DE DADOS INICIAL:**
+   - Criar coleções manualmente no Firestore:
+     * users, providers, categories, services, reviews
+     * conversations, messages, favorites, service_orders
+   - Adicionar ao menos 1-2 categorias exemplo para testes
+
+4. **TESTES DE FLUXO:**
+   - Testar registro com email/senha
+   - Testar login com email/senha
+   - Testar autenticação por telefone
+   - Testar CRUD básico no Firestore
+
+**COMANDOS ESPECÍFICOS A EXECUTAR:**
+
+1. **Verificar status atual:**
+   - Testar conexão Firebase: tentar registro/login básico
+   - Verificar logs de erro no console
+
+2. **Configurar ambiente:**
+   - Atualizar pacotes Expo se necessário
+   - Reiniciar servidor com cache limpo
+
+3. **Ajustar código se necessário:**
+   - Verificar inicialização do Firebase no app
+   - Confirmar que AuthContext está usando métodos corretos
+
+4. **Testar passo a passo:**
+   - Passo 1: Registrar usuário com email
+   - Passo 2: Login com usuário registrado
+   - Passo 3: Criar documento no Firestore
+   - Passo 4: Recuperar dados do Firestore
+
+**RESULTADO ESPERADO:**
+- App funcionando 100% com Firebase (sem backend)
+- Login funcionando com email/senha E telefone
+- Dados sendo persistidos/recuperados do Firestore
+- Regras de segurança implementadas (pelo menos para dev)
+
+**INFORMAÇÕES DE ACESSO:**
+- Project ID: servija-34e26
+- API Key: AIzaSyBn6eDmLMlHsHeMKiQy2YX__wD-EYBt8MU
+- authDomain: servija-34e26.firebaseapp.com
