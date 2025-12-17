@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from "react";
 import { View, StyleSheet, FlatList, Pressable, ActivityIndicator, Modal, TouchableWithoutFeedback } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,27 +7,24 @@ import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { ProviderCard } from "@/components/ProviderCard";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
+import { providersService, servicesService } from "@/lib/query-client";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
-import { providersService, usersService } from "@/lib/query-client";
+import { ServiceData } from "@/lib/firestore";
 
-type RouteType = RouteProp<HomeStackParamList, "Search">;
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList & RootStackParamList>;
+type RouteType = RouteProp<HomeStackParamList, "Search">;
 
-type SortOption = "rating" | "price_asc" | "price_desc" | "name";
-
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: "rating", label: "Melhor avaliação" },
-  { value: "price_asc", label: "Menor preço" },
-  { value: "price_desc", label: "Maior preço" },
-  { value: "name", label: "Nome A-Z" },
-];
+type ProviderWithServices = {
+  provider: NonNullable<Awaited<ReturnType<typeof providersService.getAll>>[number]>;
+  services: ServiceData[];
+};
 
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
@@ -35,166 +33,186 @@ export default function SearchScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteType>();
+
+  const [sortBy, setSortBy] = useState<"rating" | "price" | "name">("rating");
+  const [isSortModalVisible, setIsSortModalVisible] = useState(false);
+
   const { query, categoryId, categoryName } = route.params || {};
 
-  const [filters, setFilters] = useState({
-    categoryId,
-    city: undefined as string | undefined,
-    minRating: undefined as number | undefined,
-    maxPrice: undefined as number | undefined,
-  });
-
-  const [sortBy, setSortBy] = useState<SortOption>("rating");
-  const [showSortModal, setShowSortModal] = useState(false);
-
-  const { data: providersData = [], isLoading } = useQuery({
-    queryKey: ["providers/search", query, filters, sortBy],
+  const { data: allProviders = [], isLoading } = useQuery({
+    queryKey: ["providers", query, categoryId],
     queryFn: async () => {
-      let providers = query 
-        ? await providersService.search(query)
-        : await providersService.getAll(filters.city ? { city: filters.city } : undefined);
-      
-      const providersWithUsers = await Promise.all(
-        providers.map(async (provider) => {
-          const user = await usersService.get(provider.userId);
-          return { ...provider, user };
-        })
-      );
-
-      return providersWithUsers.sort((a, b) => {
-        switch (sortBy) {
-          case "rating":
-            return (b.averageRating || 0) - (a.averageRating || 0);
-          case "price_asc":
-            return (a.hourlyRate || 0) - (b.hourlyRate || 0);
-          case "price_desc":
-            return (b.hourlyRate || 0) - (a.hourlyRate || 0);
-          case "name":
-            return (a.user?.name || "").localeCompare(b.user?.name || "");
-          default:
-            return 0;
-        }
-      });
+      if (query) return providersService.search(query);
+      return providersService.getAll();
     },
   });
 
-  const providers = Array.isArray(providersData) ? providersData : [];
+  const servicesQueries = allProviders.map((provider) => ({
+    queryKey: ["services", provider.id],
+    queryFn: () => servicesService.getByProvider(provider.id),
+  }));
+
+  const servicesResults = useQueries({ queries: servicesQueries });
+
+  const providersWithServices: ProviderWithServices[] = allProviders.map((provider, index) => ({
+    provider,
+    services: servicesResults[index]?.data ?? [],
+  }));
+
+  const sortedProviders = useCallback(() => {
+    return [...providersWithServices].sort((a, b) => {
+      switch (sortBy) {
+        case "rating":
+          return (Number(b.provider.averageRating) || 0) - (Number(a.provider.averageRating) || 0);
+        case "price":
+          return (Number(a.provider.hourlyRate) || 0) - (Number(b.provider.hourlyRate) || 0);
+        case "name":
+          return (a.provider.city || "").localeCompare(b.provider.city || "");
+        default:
+          return 0;
+      }
+    });
+  }, [providersWithServices, sortBy]);
+
+  const [filteredProviders, setFilteredProviders] = useState<ProviderWithServices[]>([]);
 
   useEffect(() => {
-    navigation.setOptions({
-      headerTitle: categoryName || query || "Resultados",
-      headerRight: () => (
-        <View style={styles.headerButtons}>
-          <Pressable onPress={() => setShowSortModal(true)} style={styles.headerButton}>
-            <Feather name="bar-chart-2" size={22} color={theme.text} />
-          </Pressable>
-          <Pressable
-            onPress={() =>
-              navigation.navigate("Filter", {
-                categoryId: filters.categoryId,
-                city: filters.city,
-                minRating: filters.minRating,
-                maxPrice: filters.maxPrice,
-              })
-            }
-            style={styles.headerButton}
-          >
-            <Feather name="sliders" size={22} color={theme.text} />
-          </Pressable>
-        </View>
-      ),
-    });
-  }, [navigation, categoryName, query, filters, theme]);
+    setFilteredProviders(sortedProviders());
+  }, [sortedProviders]);
 
   const handleProviderPress = (providerId: string) => {
     navigation.navigate("Provider", { providerId });
   };
 
-  const handleSortSelect = (option: SortOption) => {
-    setSortBy(option);
-    setShowSortModal(false);
+  const handleOpenFilters = () => {
+    navigation.navigate("Filter", { categoryId });
+  };
+
+  const renderProviderRow = ({ item }: { item: ProviderWithServices[] }) => (
+    <View style={styles.row}>
+      {item.map((entry) => (
+        <ProviderCard
+          key={entry.provider.id}
+          provider={entry.provider}
+          services={entry.services}
+          style={styles.gridCard}
+          onPress={() => handleProviderPress(entry.provider.id)}
+        />
+      ))}
+    </View>
+  );
+
+  const chunkArray = <T,>(array: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  const providerRows = chunkArray(filteredProviders, 2);
+
+  const getTitle = () => {
+    if (categoryName) return categoryName;
+    if (query) return `Resultados para "${query}"`;
+    return "Todos os Prestadores";
   };
 
   return (
     <ThemedView style={styles.container}>
-      <View style={[styles.sortBar, { backgroundColor: theme.backgroundSecondary }]}>
-        <Pressable style={styles.sortPill} onPress={() => setShowSortModal(true)}>
-          <Feather name="bar-chart-2" size={16} color={theme.primary} />
-          <ThemedText type="small" style={{ color: theme.primary }}>
-            {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
-          </ThemedText>
-          <Feather name="chevron-down" size={16} color={theme.primary} />
-        </Pressable>
-        <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {providers.length} resultado{providers.length !== 1 ? "s" : ""}
-        </ThemedText>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top + headerHeight,
+            backgroundColor: theme.backgroundRoot,
+          },
+        ]}
+      >
+        <View style={styles.headerContent}>
+          <ThemedText type="h3">{getTitle()}</ThemedText>
+          <View style={styles.actions}>
+            <Pressable
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.backgroundSecondary },
+              ]}
+              onPress={() => setIsSortModalVisible(true)}
+            >
+              <Feather name="sliders" size={20} color={theme.text} />
+              <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                Ordenar
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.backgroundSecondary },
+              ]}
+              onPress={handleOpenFilters}
+            >
+              <Feather name="filter" size={20} color={theme.text} />
+              <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>
+                Filtros
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
       </View>
 
-      <FlatList
-        data={providers}
-        keyExtractor={(item, index) => item.id || `provider-${index}`}
-        numColumns={2}
-        columnWrapperStyle={styles.row}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingTop: Spacing.md, paddingBottom: tabBarHeight + Spacing.xl },
-        ]}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
-        renderItem={({ item }) => (
-          <ProviderCard
-            provider={item}
-            onPress={() => handleProviderPress(item.id)}
-            style={styles.gridCard}
-          />
-        )}
-        ListEmptyComponent={
-          isLoading ? (
-            <ActivityIndicator color={theme.primary} style={styles.loader} />
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Feather name="search" size={48} color={theme.textSecondary} />
-              <ThemedText type="body" style={[styles.emptyText, { color: theme.textSecondary }]}>
-                Nenhum prestador encontrado
-              </ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center" }}>
-                Tente ajustar os filtros ou buscar por outro termo
-              </ThemedText>
-            </View>
-          )
-        }
-      />
+      {isLoading ? (
+        <ActivityIndicator style={styles.loader} color={theme.primary} />
+      ) : filteredProviders.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Feather name="search" size={48} color={theme.textSecondary} />
+          <ThemedText type="body" style={styles.emptyText}>
+            Nenhum prestador encontrado
+          </ThemedText>
+          <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center" }}>
+            Tente ajustar sua busca ou filtros
+          </ThemedText>
+        </View>
+      ) : (
+        <FlatList
+          data={providerRows}
+          renderItem={renderProviderRow}
+          keyExtractor={(item) => item.map((entry) => entry.provider.id).join("-")}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: tabBarHeight + Spacing.xl },
+          ]}
+        />
+      )}
 
       <Modal
-        visible={showSortModal}
+        visible={isSortModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowSortModal(false)}
+        onRequestClose={() => setIsSortModalVisible(false)}
       >
-        <TouchableWithoutFeedback onPress={() => setShowSortModal(false)}>
+        <TouchableWithoutFeedback onPress={() => setIsSortModalVisible(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
               <View style={[styles.sortModal, { backgroundColor: theme.backgroundDefault }]}>
                 <ThemedText type="h4" style={styles.modalTitle}>
                   Ordenar por
                 </ThemedText>
-                {SORT_OPTIONS.map((option) => (
+                {(["rating", "price", "name"] as const).map((option) => (
                   <Pressable
-                    key={option.value}
+                    key={option}
                     style={[
                       styles.sortOption,
-                      sortBy === option.value && { backgroundColor: theme.backgroundSecondary },
+                      sortBy === option && { backgroundColor: theme.backgroundSecondary },
                     ]}
-                    onPress={() => handleSortSelect(option.value)}
+                    onPress={() => {
+                      setSortBy(option);
+                      setIsSortModalVisible(false);
+                    }}
                   >
-                    <ThemedText
-                      type="body"
-                      style={sortBy === option.value ? { color: theme.primary } : undefined}
-                    >
-                      {option.label}
+                    <ThemedText type="body">
+                      {option === "rating" ? "Avaliação" : option === "price" ? "Preço" : "Nome"}
                     </ThemedText>
-                    {sortBy === option.value && (
-                      <Feather name="check" size={20} color={theme.primary} />
-                    )}
+                    {sortBy === option && <Feather name="check" size={20} color={theme.primary} />}
                   </Pressable>
                 ))}
               </View>
@@ -210,26 +228,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerButtons: {
-    flexDirection: "row",
-    gap: Spacing.sm,
+  header: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    zIndex: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  headerButton: {
-    padding: Spacing.sm,
-  },
-  sortBar: {
+  headerContent: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
-  sortPill: {
+  actions: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  actionButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.xs,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
   },
   listContent: {

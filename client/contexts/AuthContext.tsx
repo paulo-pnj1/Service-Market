@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { 
   auth, 
@@ -19,7 +19,7 @@ interface User {
   phone?: string;
   city?: string;
   photoUrl?: string;
-  role: string;
+  role: "client" | "provider";
 }
 
 interface Provider {
@@ -40,29 +40,22 @@ interface AuthContextType {
   user: User | null;
   provider: Provider | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (data: RegisterData) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, name: string, role: "client" | "provider", city?: string) => Promise<void>;
   logout: () => Promise<void>;
-  updateUser: (data: Partial<User>) => void;
-  updateProvider: (data: Partial<Provider>) => void;
-  setProvider: (provider: Provider | null) => void;
-  forgotPassword: (email: string) => Promise<{ success: boolean; error?: string; message?: string }>;
-}
-
-interface RegisterData {
-  email: string;
-  password: string;
-  name: string;
-  phone?: string;
-  city?: string;
-  role: "client" | "provider";
+  updateUser: (data: Partial<User>) => Promise<void>;
+  updateProvider: (data: Partial<Provider>) => Promise<void>;
+  setProvider: (newProvider: Provider | null) => void;
+  forgotPassword: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_STORAGE_KEY = "@servicoja_auth";
+interface AuthProviderProps {
+  children: ReactNode;
+}
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [provider, setProviderState] = useState<Provider | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,11 +63,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        await loadUserData(firebaseUser);
+        try {
+          const userDoc = await usersService.getByEmail(firebaseUser.email!);
+          if (userDoc) {
+            const transformedUser: User = {
+              id: userDoc.id,
+              email: userDoc.email,
+              name: userDoc.name,
+              phone: userDoc.phone,
+              city: userDoc.city,
+              photoUrl: userDoc.photoUrl,
+              role: userDoc.role,
+            };
+            setUser(transformedUser);
+
+            if (userDoc.role === "provider") {
+              const providerDoc = await providersService.getByUserId(userDoc.id);
+              if (providerDoc) {
+                setProviderState(providerDoc as Provider);
+              } else {
+                setProviderState(null);
+              }
+            } else {
+              setProviderState(null);
+            }
+          } else {
+            setUser(null);
+            setProviderState(null);
+          }
+        } catch (error) {
+          console.error("Erro ao carregar dados do usuário:", error);
+          setUser(null);
+          setProviderState(null);
+        }
       } else {
         setUser(null);
         setProviderState(null);
-        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       }
       setIsLoading(false);
     });
@@ -82,129 +106,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const loadUserData = async (firebaseUser: FirebaseUser) => {
-    try {
-      const userData = await usersService.get(firebaseUser.uid);
-      if (userData) {
-        const userObj: User = {
-          id: userData.id,
-          email: userData.email,
-          name: userData.name,
-          phone: userData.phone,
-          city: userData.city,
-          photoUrl: userData.photoUrl,
-          role: userData.role,
-        };
-        setUser(userObj);
-
-        if (userData.role === "provider") {
-          const providerData = await providersService.getByUserId(userData.id);
-          if (providerData) {
-            setProviderState({
-              id: providerData.id,
-              userId: providerData.userId,
-              description: providerData.description,
-              hourlyRate: providerData.hourlyRate,
-              city: providerData.city,
-              whatsapp: providerData.whatsapp,
-              facebook: providerData.facebook,
-              isVerified: providerData.isVerified,
-              isOnline: providerData.isOnline,
-              totalRatings: providerData.totalRatings,
-              averageRating: providerData.averageRating,
-            });
-          }
-        }
-
-        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ userId: firebaseUser.uid }));
-      }
-    } catch (error) {
-      console.error("Error loading user data:", error);
-    }
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    await signInWithEmailAndPassword(auth, email, password);
+    // onAuthStateChanged vai tratar do resto
   };
 
-  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await loadUserData(userCredential.user);
-      return { success: true };
-    } catch (error: any) {
-      let message = "Erro ao fazer login";
-      if (error.code === "auth/user-not-found" || error.code === "auth/wrong-password") {
-        message = "Email ou senha incorretos";
-      } else if (error.code === "auth/invalid-email") {
-        message = "Email invalido";
-      } else if (error.code === "auth/too-many-requests") {
-        message = "Muitas tentativas. Tente novamente mais tarde";
-      }
-      return { success: false, error: message };
-    }
-  };
+  const register = async (email: string, password: string, name: string, role: "client" | "provider", city?: string) => {
+    setIsLoading(true);
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(credential.user, { displayName: name });
 
-  const register = async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, data.email, data.password);
-      
-      await updateProfile(userCredential.user, { displayName: data.name });
+    // Corrigido: createdAt removido porque está no Omit
+    const userData: Omit<UserData, "id" | "createdAt"> = {
+      email,
+      name,
+      role,
+      phone: undefined,
+      city,
+      photoUrl: undefined,
+    };
 
-      await usersService.create(userCredential.user.uid, {
-        email: data.email,
-        name: data.name,
-        phone: data.phone,
-        city: data.city,
-        role: data.role,
-      });
+    // Corrigido: usersService.create espera (userId, data)
+    await usersService.create(credential.user.uid, userData);
 
-      if (data.role === "provider") {
-        await providersService.create({
-          userId: userCredential.user.uid,
-          city: data.city || "Luanda",
-          isVerified: false,
-          isOnline: false,
-          totalRatings: 0,
-          averageRating: 0,
-        });
-      }
-
-      await loadUserData(userCredential.user);
-      return { success: true };
-    } catch (error: any) {
-      let message = "Erro ao criar conta";
-      if (error.code === "auth/email-already-in-use") {
-        message = "Este email ja esta em uso";
-      } else if (error.code === "auth/weak-password") {
-        message = "Senha muito fraca. Use pelo menos 6 caracteres";
-      } else if (error.code === "auth/invalid-email") {
-        message = "Email invalido";
-      }
-      return { success: false, error: message };
-    }
-  };
-
-  const forgotPassword = async (email: string): Promise<{ success: boolean; error?: string; message?: string }> => {
-    try {
-      await sendPasswordResetEmail(auth, email);
-      return { success: true, message: "Email de recuperacao enviado! Verifique sua caixa de entrada." };
-    } catch (error: any) {
-      let message = "Erro ao solicitar recuperacao de senha";
-      if (error.code === "auth/user-not-found") {
-        message = "Nenhuma conta encontrada com este email";
-      } else if (error.code === "auth/invalid-email") {
-        message = "Email invalido";
-      }
-      return { success: false, error: message };
-    }
+    // onAuthStateChanged vai carregar os dados
   };
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-      setUser(null);
-      setProviderState(null);
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-    } catch (error) {
-      console.error("Error logging out:", error);
-    }
+    await signOut(auth);
+  };
+
+  const forgotPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
   };
 
   const updateUser = async (data: Partial<User>) => {
@@ -212,20 +146,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const updated = { ...user, ...data };
       setUser(updated);
       try {
-        const updateData: Record<string, any> = {};
-        if (data.name !== undefined) updateData.name = data.name;
-        if (data.phone !== undefined) updateData.phone = data.phone;
-        if (data.city !== undefined) updateData.city = data.city;
-        if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl;
-        if (data.role !== undefined) updateData.role = data.role as "client" | "provider";
-        await usersService.update(user.id, updateData);
+        // Corrigido: Partial<UserData> – role deve ser do tipo correto
+        const userDataUpdate: Partial<UserData> = {
+          ...data,
+          // Garantir que role, se presente, seja do tipo correto
+          role: data.role as "client" | "provider" | undefined,
+        };
+        await usersService.update(user.id, userDataUpdate);
       } catch (error) {
         console.error("Error updating user:", error);
       }
     }
   };
 
-  const updateProvider = async (data: Partial<Provider>) => {
+  const updateProvider = useCallback(async (data: Partial<Provider>) => {
     if (provider) {
       const updated = { ...provider, ...data };
       setProviderState(updated);
@@ -235,11 +169,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("Error updating provider:", error);
       }
     }
-  };
+  }, [provider]);
 
-  const setProvider = (newProvider: Provider | null) => {
+  const setProvider = useCallback((newProvider: Provider | null) => {
     setProviderState(newProvider);
-  };
+  }, []);
 
   return (
     <AuthContext.Provider

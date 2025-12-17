@@ -23,7 +23,7 @@ export default function EditProfileScreen() {
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const navigation = useNavigation<NavigationProp>();
-  const { user, provider, updateUser, updateProvider } = useAuth();
+  const { user, provider, updateUser, updateProvider, setProvider } = useAuth();
 
   const [name, setName] = useState(user?.name || "");
   const [phone, setPhone] = useState(user?.phone || "");
@@ -35,49 +35,56 @@ export default function EditProfileScreen() {
 
   const isProviderRole = user?.role === "provider";
 
-  const updateMutation = useMutation({
-    mutationFn: async () => {
-      if (!user) throw new Error("User not authenticated");
-      
-      await usersService.update(user.id, { name, phone, city });
-      const updatedUser = await usersService.get(user.id);
+const updateMutation = useMutation({
+  mutationFn: async () => {
+    if (!user) throw new Error("User not authenticated");
+    
+    await usersService.update(user.id, { name, phone, city });
+    const updatedUser = await usersService.get(user.id);
 
-      let updatedProvider = null;
+    let updatedProvider = null;
 
-      if (isProviderRole && provider) {
-        const providerPayload = {
-          whatsapp,
-          facebook,
-          description,
-          hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
-          city,
-        };
+    if (isProviderRole && provider) {
+      const providerPayload = {
+        whatsapp,
+        facebook,
+        description,
+        hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
+        city,
+      };
 
-        await providersService.update(provider.id, providerPayload);
-        updatedProvider = await providersService.get(provider.id);
-      } else if (isProviderRole && !provider) {
-        const providerPayload = {
-          userId: user.id,
-          whatsapp,
-          facebook,
-          description,
-          hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
-          city,
-          isVerified: false,
-          isOnline: true,
-          totalRatings: 0,
-          averageRating: 0,
-        };
+      await providersService.update(provider.id, providerPayload);
+      updatedProvider = await providersService.get(provider.id);
+    } else if (isProviderRole && !provider) {
+      const providerPayload = {
+        userId: user.id,
+        whatsapp,
+        facebook,
+        description,
+        hourlyRate: hourlyRate ? Number(hourlyRate) : undefined,
+        city,
+        isVerified: false,
+        isOnline: true,
+        totalRatings: 0,
+        averageRating: 0,
+      };
 
-        const newProviderId = await providersService.create(providerPayload);
-        updatedProvider = await providersService.get(newProviderId);
-      }
+      // Corrigido: passe o objeto providerPayload, não user.id
+      const newProvider = await providersService.create(providerPayload);
+      updatedProvider = newProvider;
+    }
 
-      return { user: updatedUser, provider: updatedProvider };
-    },
+    return { user: updatedUser, provider: updatedProvider };
+  },
     onSuccess: (data) => {
       if (data.user) updateUser(data.user);
-      if (data.provider) updateProvider(data.provider);
+      if (data.provider) {
+        if (provider) {
+          updateProvider(data.provider);
+        } else {
+          setProvider(data.provider);
+        }
+      }
       Alert.alert("Sucesso", "Perfil atualizado com sucesso");
       navigation.goBack();
     },

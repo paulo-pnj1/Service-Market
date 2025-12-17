@@ -1,5 +1,6 @@
+
 import React, { useEffect } from "react";
-import { View, StyleSheet, Pressable, Alert } from "react-native";
+import { View, StyleSheet, Pressable, Alert, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useHeaderHeight } from "@react-navigation/elements";
@@ -19,67 +20,70 @@ type NavigationProp = NativeStackNavigationProp<ProfileStackParamList>;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
+  const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
   const navigation = useNavigation<NavigationProp>();
-  const { user, provider, logout } = useAuth();
+  const { user, provider, logout, isLoading } = useAuth();
 
-  // CORREÇÃO: Se o usuário for prestador mas provider ainda for null, guiar para completar o perfil
-  useEffect(() => {
-    if (user?.role === "provider" && !provider) {
-      Alert.alert(
-        "Complete o seu perfil de prestador",
-        "Para acessar todas as funcionalidades (Meus Serviços, estatísticas, etc.), complete o seu perfil agora.",
-        [
-          { text: "Mais tarde", style: "cancel" },
-          {
-            text: "Completar agora",
-            onPress: () => navigation.navigate("EditProfile"),
-          },
-        ]
-      );
-    }
-  }, [user, provider, navigation]);
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
-      "Sair",
+      "Confirmar",
       "Tem certeza que deseja sair?",
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Sair", style: "destructive", onPress: logout },
+        {
+          text: "Sair",
+          style: "destructive",
+          onPress: async () => {
+            await logout();
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "Auth" as never }],
+            });
+          },
+        },
       ]
     );
   };
 
-  const isProvider = user?.role === "provider" && provider;
+  const isProvider = user?.role === "provider";
 
-  const menuItems = [
-    { icon: "edit-2", label: "Editar Perfil", onPress: () => navigation.navigate("EditProfile") },
-    ...(isProvider
-      ? [{ icon: "briefcase", label: "Meus Servicos", onPress: () => navigation.navigate("ServiceManagement") }]
-      : [{ icon: "clock", label: "Historico de Servicos", onPress: () => navigation.navigate("OrderHistory") }]),
-    { icon: "bell", label: "Notificacoes", onPress: () => {} },
-    { icon: "help-circle", label: "Ajuda", onPress: () => {} },
-    { icon: "info", label: "Sobre", onPress: () => {} },
-  ];
+  const getBadgeColor = () => {
+    return isProvider ? theme.primary : theme.secondary;
+  };
+
+  const getBadgeText = () => {
+    return isProvider ? "Prestador" : "Cliente";
+  };
+
+  if (isLoading) {
+    return (
+      <ThemedView style={styles.container}>
+        <ActivityIndicator size="large" color={theme.primary} style={{ flex: 1 }} />
+      </ThemedView>
+    );
+  }
 
   return (
     <ThemedView style={styles.container}>
       <KeyboardAwareScrollViewCompat
-        style={{ flex: 1 }}
         contentContainerStyle={[
           styles.content,
-          { paddingTop: headerHeight + Spacing.lg, paddingBottom: tabBarHeight + Spacing.xl },
+          {
+            paddingTop: insets.top + headerHeight + Spacing.lg,
+            paddingBottom: tabBarHeight + Spacing.xl,
+          },
         ]}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
       >
-        <View style={styles.profileHeader}>
-          <View style={[styles.avatar, { backgroundColor: theme.primary }]}>
-            <ThemedText type="h1" style={{ color: "#fff" }}>
-              {user?.name?.charAt(0)?.toUpperCase() || "U"}
-            </ThemedText>
+        <View style={styles.userInfo}>
+          <View
+            style={[
+              styles.avatar,
+              { backgroundColor: theme.backgroundTertiary },
+            ]}
+          >
+            <Feather name="user" size={48} color={theme.textSecondary} />
           </View>
           <ThemedText type="h3" style={styles.userName}>
             {user?.name}
@@ -87,72 +91,108 @@ export default function ProfileScreen() {
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
             {user?.email}
           </ThemedText>
+          <View
+            style={[
+              styles.badge,
+              { backgroundColor: getBadgeColor() },
+            ]}
+          >
+            <ThemedText type="small" style={{ color: "#fff" }}>
+              {getBadgeText()}
+            </ThemedText>
+          </View>
           {user?.city && (
             <View style={styles.locationRow}>
-              <Feather name="map-pin" size={14} color={theme.textSecondary} />
+              <Feather name="map-pin" size={16} color={theme.textSecondary} />
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
                 {user.city}
               </ThemedText>
             </View>
           )}
-          {user?.role === "provider" && (
-            <View style={[styles.badge, { backgroundColor: theme.primary + "20" }]}>
-              <ThemedText type="small" style={{ color: theme.primary }}>
-                Prestador de Servicos
-              </ThemedText>
-            </View>
-          )}
         </View>
 
-        {provider && (
-          <View style={[styles.statsCard, { backgroundColor: theme.backgroundSecondary }]}>
+        {isProvider && provider && (
+          <View
+            style={[
+              styles.statsCard,
+              { backgroundColor: theme.backgroundSecondary },
+            ]}
+          >
             <View style={styles.statItem}>
-              <ThemedText type="h3">{provider.averageRating || "0.0"}</ThemedText>
+              <ThemedText type="h3">{provider.averageRating?.toFixed(1) || "0.0"}</ThemedText>
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Avaliacao
+                Avaliação
               </ThemedText>
             </View>
             <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
             <View style={styles.statItem}>
               <ThemedText type="h3">{provider.totalRatings || 0}</ThemedText>
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Avaliacoes
+                Avaliações
               </ThemedText>
             </View>
             <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
             <View style={styles.statItem}>
-              <ThemedText type="h3">
-                {provider.isVerified ? "Sim" : "Nao"}
-              </ThemedText>
+              <ThemedText type="h3">0</ThemedText>
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Verificado
+                Serviços
               </ThemedText>
             </View>
           </View>
         )}
 
         <View style={styles.menuSection}>
-          {menuItems.map((item, index) => (
+          <Pressable
+            style={[
+              styles.menuItem,
+              { backgroundColor: theme.backgroundSecondary },
+            ]}
+            onPress={() => navigation.navigate("EditProfile")}
+          >
+            <Feather name="edit" size={24} color={theme.text} />
+            <ThemedText style={styles.menuItemText}>Editar Perfil</ThemedText>
+            <Feather name="chevron-right" size={24} color={theme.textSecondary} />
+          </Pressable>
+
+          {isProvider && (
             <Pressable
-              key={index}
-              style={[styles.menuItem, { backgroundColor: theme.backgroundSecondary }]}
-              onPress={item.onPress}
+              style={[
+                styles.menuItem,
+                { backgroundColor: theme.backgroundSecondary },
+              ]}
+              onPress={() => navigation.navigate("ServiceManagement")}
             >
-              <Feather name={item.icon as any} size={20} color={theme.text} />
-              <ThemedText type="body" style={{ flex: 1 }}>
-                {item.label}
-              </ThemedText>
-              <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+              <Feather name="tool" size={24} color={theme.text} />
+              <ThemedText style={styles.menuItemText}>Gerenciar Serviços</ThemedText>
+              <Feather name="chevron-right" size={24} color={theme.textSecondary} />
             </Pressable>
-          ))}
+          )}
+
+          <Pressable
+            style={[
+              styles.menuItem,
+              { backgroundColor: theme.backgroundSecondary },
+            ]}
+            onPress={() => navigation.navigate("OrderHistory")}
+          >
+            <Feather name="clock" size={24} color={theme.text} />
+            <ThemedText style={styles.menuItemText}>Histórico de Serviços</ThemedText>
+            <Feather name="chevron-right" size={24} color={theme.textSecondary} />
+          </Pressable>
         </View>
 
-        <Button
+        <Pressable
+          style={[
+            styles.menuItem,
+            { backgroundColor: theme.backgroundSecondary },
+          ]}
           onPress={handleLogout}
-          style={[styles.logoutButton, { backgroundColor: theme.error }]}
         >
-          Sair
-        </Button>
+          <Feather name="log-out" size={24} color={theme.error} />
+          <ThemedText style={[styles.menuItemText, { color: theme.error }]}>
+            Sair
+          </ThemedText>
+        </Pressable>
       </KeyboardAwareScrollViewCompat>
     </ThemedView>
   );
@@ -165,14 +205,14 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing.lg,
   },
-  profileHeader: {
+  userInfo: {
     alignItems: "center",
     marginBottom: Spacing.xl,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: Spacing.md,
@@ -217,7 +257,9 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     gap: Spacing.md,
   },
-  logoutButton: {
-    marginTop: Spacing.lg,
+  menuItemText: {
+    flex: 1,
+    marginLeft: Spacing.md,
+    fontSize: 16,
   },
 });

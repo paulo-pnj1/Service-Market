@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import {
   View,
@@ -12,23 +13,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { servicesService } from "@/lib/query-client";
-
-interface Service {
-  id: string;
-  name: string;
-  description?: string;
-  price: number;
-  duration?: number;
-  isActive: boolean;
-}
+import { servicesService, categoriesService } from "@/lib/query-client";
+import { ServiceData } from "@/lib/firestore"; // Import para compatibilidade
 
 export default function ServiceManagementScreen() {
   const insets = useSafeAreaInsets();
@@ -37,221 +30,185 @@ export default function ServiceManagementScreen() {
   const { provider } = useAuth();
   const queryClient = useQueryClient();
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingService, setEditingService] = useState<Service | null>(null);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [duration, setDuration] = useState("");
+  const [showModal, setShowModal] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [editingService, setEditingService] = useState<Partial<ServiceData>>({});
+  const [isEditing, setIsEditing] = useState(false);
 
-  const { data: services = [], isLoading } = useQuery<Service[]>({
-    queryKey: ["provider-services", provider?.id],
-    queryFn: async () => {
-      if (!provider) return [];
-      return servicesService.getByProvider(provider.id);
-    },
+  const { data: services = [], isLoading } = useQuery<ServiceData[]>({
+    queryKey: ["services", provider?.id],
+    queryFn: () => servicesService.getByProvider(provider?.id || ""),
     enabled: !!provider?.id,
   });
 
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: categoriesService.getAll,
+  });
+
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      if (!provider) throw new Error("Provider not found");
-      return servicesService.create({
-        ...data,
-        providerId: provider.id,
-        isActive: true,
-      });
-    },
+    mutationFn: (data: Omit<ServiceData, "id" | "createdAt">) =>
+      servicesService.create({ ...data, providerId: provider?.id || "" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["provider-services"] });
-      closeModal();
-      Alert.alert("Sucesso", "Servico criado com sucesso");
+      queryClient.invalidateQueries({ queryKey: ["services"] });
+      setShowModal(false);
+      setEditingService({});
     },
-    onError: (error: any) => {
-      Alert.alert("Erro", error.message || "Falha ao criar servico");
-    },
+    onError: (error: any) => Alert.alert("Erro", error.message),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      await servicesService.update(id, data);
-    },
+    mutationFn: ({ id, data }: { id: string; data: Partial<ServiceData> }) =>
+      servicesService.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["provider-services"] });
-      closeModal();
-      Alert.alert("Sucesso", "Servico atualizado com sucesso");
+      queryClient.invalidateQueries({ queryKey: ["services"] });
+      setShowModal(false);
+      setEditingService({});
     },
-    onError: (error: any) => {
-      Alert.alert("Erro", error.message || "Falha ao atualizar servico");
-    },
+    onError: (error: any) => Alert.alert("Erro", error.message),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await servicesService.delete(id);
-    },
+    mutationFn: (id: string) => servicesService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["provider-services"] });
-      Alert.alert("Sucesso", "Servico removido com sucesso");
+      queryClient.invalidateQueries({ queryKey: ["services"] });
     },
-    onError: (error: any) => {
-      Alert.alert("Erro", error.message || "Falha ao remover servico");
-    },
+    onError: (error: any) => Alert.alert("Erro", error.message),
   });
 
-  const openModal = (service?: Service) => {
-    if (service) {
-      setEditingService(service);
-      setName(service.name);
-      setDescription(service.description || "");
-      setPrice(service.price.toString());
-      setDuration(service.duration?.toString() || "");
-    } else {
-      setEditingService(null);
-      setName("");
-      setDescription("");
-      setPrice("");
-      setDuration("");
-    }
-    setModalVisible(true);
+  const handleAddService = () => {
+    setIsEditing(false);
+    setEditingService({ isActive: true });
+    setShowModal(true);
   };
 
-  const closeModal = () => {
-    setModalVisible(false);
-    setEditingService(null);
+  const handleEditService = (service: ServiceData) => {
+    setIsEditing(true);
+    setEditingService(service);
+    setShowModal(true);
+  };
+
+  const handleDeleteService = (id: string) => {
+    Alert.alert(
+      "Confirmar",
+      "Tem certeza que deseja excluir este serviço?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: () => deleteMutation.mutate(id),
+        },
+      ]
+    );
   };
 
   const handleSave = () => {
-    if (!name.trim()) {
-      Alert.alert("Erro", "Nome do servico e obrigatorio");
-      return;
-    }
-    if (!price.trim()) {
-      Alert.alert("Erro", "Preco e obrigatorio");
+    if (!editingService.name || editingService.price == null || !editingService.categoryId) {
+      Alert.alert("Erro", "Preencha todos os campos obrigatórios");
       return;
     }
 
-    const serviceData = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      price: parseFloat(price),
-      duration: duration ? parseInt(duration) : undefined,
+    const data: Partial<ServiceData> = {
+      name: editingService.name,
+      description: editingService.description,
+      price: Number(editingService.price),
+      duration: editingService.duration ? Number(editingService.duration) : undefined,
+      categoryId: editingService.categoryId,
+      isActive: editingService.isActive ?? true,
     };
 
-    if (editingService) {
-      updateMutation.mutate({ id: editingService.id, data: serviceData });
+    if (isEditing && editingService.id) {
+      updateMutation.mutate({ id: editingService.id, data });
     } else {
-      createMutation.mutate(serviceData);
+      createMutation.mutate(data as Omit<ServiceData, "id" | "createdAt">);
     }
   };
 
-  const handleDelete = (service: Service) => {
-    Alert.alert("Confirmar", `Deseja remover o servico "${service.name}"?`, [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Remover", style: "destructive", onPress: () => deleteMutation.mutate(service.id) },
-    ]);
-  };
+  const selectedCategory = categories.find((cat) => cat.id === editingService.categoryId);
 
-  const renderService = ({ item }: { item: Service }) => (
-    <View style={[styles.serviceCard, { backgroundColor: theme.backgroundSecondary }]}>
-      <View style={styles.serviceInfo}>
-        <ThemedText type="body" style={[styles.serviceName, { fontWeight: "600" }]}>
-          {item.name}
-        </ThemedText>
-        {item.description && (
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {item.description}
+  const renderService = ({ item }: { item: ServiceData }) => {
+    const categoryName = categories.find((cat) => cat.id === item.categoryId)?.name || "Sem categoria";
+
+    return (
+      <View style={[styles.serviceCard, { backgroundColor: theme.backgroundSecondary }]}>
+        <View style={styles.serviceHeader}>
+          <ThemedText type="body" style={{ flex: 1 }}>
+            {item.name}
           </ThemedText>
-        )}
-        <View style={styles.serviceDetails}>
-          <ThemedText type="small" style={{ color: theme.primary, fontWeight: "600" }}>
-            {item.price} Kz
-          </ThemedText>
-          {item.duration && (
-            <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.md }}>
-              {item.duration} min
-            </ThemedText>
-          )}
+          <View style={styles.serviceActions}>
+            <Pressable onPress={() => handleEditService(item)}>
+              <Ionicons name="pencil" size={20} color={theme.primary} />
+            </Pressable>
+            <Pressable onPress={() => handleDeleteService(item.id)} style={{ marginLeft: Spacing.md }}>
+              <Ionicons name="trash" size={20} color={theme.error} />
+            </Pressable>
+          </View>
         </View>
+        <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.xs }}>
+          AOA {item.price ?? "N/D"} • {item.duration ?? "N/D"} min
+        </ThemedText>
+        <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.xs }}>
+          {categoryName}
+        </ThemedText>
       </View>
-      <View style={styles.serviceActions}>
-        <Pressable style={styles.actionButton} onPress={() => openModal(item)}>
-          <Ionicons name="pencil" size={20} color={theme.primary} />
-        </Pressable>
-        <Pressable style={styles.actionButton} onPress={() => handleDelete(item)}>
-          <Ionicons name="trash" size={20} color="#E74C3C" />
-        </Pressable>
-      </View>
-    </View>
-  );
-
-  const isPending = createMutation.isPending || updateMutation.isPending;
+    );
+  };
 
   return (
     <ThemedView style={styles.container}>
       <FlatList
         data={services}
-        keyExtractor={(item) => item.id}
         renderItem={renderService}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={[
-          styles.list,
-          { paddingTop: headerHeight + Spacing.lg, paddingBottom: insets.bottom + 100 },
+          styles.listContent,
+          { paddingTop: insets.top + headerHeight + Spacing.lg },
         ]}
+        ListHeaderComponent={
+          <Button onPress={handleAddService} style={styles.addButton}>
+            Adicionar Serviço
+          </Button>
+        }
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+            <ActivityIndicator color={theme.primary} />
           ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="briefcase-outline" size={64} color={theme.textSecondary} />
-              <ThemedText type="body" style={{ textAlign: "center", marginTop: Spacing.lg, fontWeight: "600" }}>
-                Nenhum servico cadastrado
-              </ThemedText>
-              <ThemedText
-                type="small"
-                style={{ textAlign: "center", color: theme.textSecondary, marginTop: Spacing.sm }}
-              >
-                Adicione servicos para que clientes possam encontra-lo
-              </ThemedText>
-            </View>
+            <ThemedText type="body" style={styles.emptyText}>
+              Nenhum serviço cadastrado
+            </ThemedText>
           )
         }
       />
 
-      <View style={[styles.fabContainer, { bottom: insets.bottom + Spacing.xl }]}>
-        <Pressable style={[styles.fab, { backgroundColor: theme.primary }]} onPress={() => openModal()}>
-          <Ionicons name="add" size={28} color="#fff" />
-        </Pressable>
-      </View>
-
-      <Modal visible={modalVisible} animationType="slide" transparent>
+      {/* Modal de edição/criação */}
+      <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => setShowModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.backgroundSecondary }]}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundDefault }]}>
             <View style={styles.modalHeader}>
               <ThemedText type="h3">
-                {editingService ? "Editar Servico" : "Novo Servico"}
+                {isEditing ? "Editar Serviço" : "Novo Serviço"}
               </ThemedText>
-              <Pressable onPress={closeModal}>
+              <Pressable onPress={() => setShowModal(false)}>
                 <Ionicons name="close" size={24} color={theme.text} />
               </Pressable>
             </View>
-
             <View style={styles.modalForm}>
               <View style={styles.inputGroup}>
                 <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-                  Nome do Servico *
+                  Nome do Serviço *
                 </ThemedText>
                 <TextInput
                   style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
+                  value={editingService.name || ""}
+                  onChangeText={(text) => setEditingService((prev) => ({ ...prev, name: text }))}
                   placeholder="Ex: Limpeza Residencial"
                   placeholderTextColor={theme.textSecondary}
-                  value={name}
-                  onChangeText={setName}
                 />
               </View>
-
               <View style={styles.inputGroup}>
                 <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-                  Descricao
+                  Descrição
                 </ThemedText>
                 <TextInput
                   style={[
@@ -259,50 +216,117 @@ export default function ServiceManagementScreen() {
                     styles.textArea,
                     { backgroundColor: theme.backgroundSecondary, color: theme.text },
                   ]}
-                  placeholder="Descreva o servico"
+                  value={editingService.description || ""}
+                  onChangeText={(text) => setEditingService((prev) => ({ ...prev, description: text }))}
+                  placeholder="Descreva o serviço..."
                   placeholderTextColor={theme.textSecondary}
-                  value={description}
-                  onChangeText={setDescription}
                   multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
                 />
               </View>
-
               <View style={styles.row}>
-                <View style={[styles.inputGroup, { flex: 1 }]}>
+                <View style={[styles.inputGroup, { flex: 1, marginRight: Spacing.md }]}>
                   <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-                    Preco (Kz) *
+                    Preço (AOA) *
                   </ThemedText>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
-                    placeholder="5000"
+                    value={editingService.price?.toString() || ""}
+                    onChangeText={(text) => setEditingService((prev) => ({ ...prev, price: Number(text) || undefined }))}
+                    placeholder="0"
                     placeholderTextColor={theme.textSecondary}
-                    value={price}
-                    onChangeText={setPrice}
                     keyboardType="numeric"
                   />
                 </View>
-
-                <View style={[styles.inputGroup, { flex: 1, marginLeft: Spacing.md }]}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
                   <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
-                    Duracao (min)
+                    Duração (min)
                   </ThemedText>
                   <TextInput
                     style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text }]}
+                    value={editingService.duration?.toString() || ""}
+                    onChangeText={(text) => setEditingService((prev) => ({ ...prev, duration: Number(text) || undefined }))}
                     placeholder="60"
                     placeholderTextColor={theme.textSecondary}
-                    value={duration}
-                    onChangeText={setDuration}
                     keyboardType="numeric"
                   />
                 </View>
               </View>
-
-              <Button onPress={handleSave} disabled={isPending} style={styles.saveButton}>
-                {isPending ? <ActivityIndicator color="#fff" /> : "Salvar"}
+              <View style={styles.inputGroup}>
+                <ThemedText type="small" style={{ marginBottom: Spacing.xs }}>
+                  Categoria *
+                </ThemedText>
+                <Pressable
+                  style={[
+                    styles.input,
+                    { backgroundColor: theme.backgroundSecondary, justifyContent: "center" },
+                  ]}
+                  onPress={() => setShowCategoryModal(true)}
+                >
+                  <ThemedText style={{ color: editingService.categoryId ? theme.text : theme.textSecondary }}>
+                    {selectedCategory?.name || "Selecionar categoria"}
+                  </ThemedText>
+                </Pressable>
+              </View>
+              <View style={[styles.inputGroup, { flexDirection: "row", alignItems: "center" }]}>
+                <ThemedText type="small" style={{ flex: 1 }}>
+                  Ativo
+                </ThemedText>
+                <Pressable
+                  onPress={() =>
+                    setEditingService((prev) => ({ ...prev, isActive: !prev.isActive }))
+                  }
+                >
+                  <Ionicons
+                    name={editingService.isActive ? "checkbox" : "square-outline"}
+                    size={24}
+                    color={theme.primary}
+                  />
+                </Pressable>
+              </View>
+              <Button
+                onPress={handleSave}
+                disabled={createMutation.isPending || updateMutation.isPending}
+                style={styles.saveButton}
+              >
+                {createMutation.isPending || updateMutation.isPending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  "Salvar"
+                )}
               </Button>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal de seleção de categoria */}
+      <Modal visible={showCategoryModal} animationType="slide" transparent onRequestClose={() => setShowCategoryModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundDefault }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText type="h3">Selecionar Categoria</ThemedText>
+              <Pressable onPress={() => setShowCategoryModal(false)}>
+                <Ionicons name="close" size={24} color={theme.text} />
+              </Pressable>
+            </View>
+            <FlatList
+              data={categories}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.sortOption}
+                  onPress={() => {
+                    setEditingService((prev) => ({ ...prev, categoryId: item.id }));
+                    setShowCategoryModal(false);
+                  }}
+                >
+                  <ThemedText type="body">{item.name}</ThemedText>
+                  {editingService.categoryId === item.id && (
+                    <Feather name="check" size={20} color={theme.primary} />
+                  )}
+                </Pressable>
+              )}
+            />
           </View>
         </View>
       </Modal>
@@ -314,57 +338,29 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  list: {
+  listContent: {
     paddingHorizontal: Spacing.lg,
-    flexGrow: 1,
+    paddingBottom: Spacing.xl,
   },
-  loader: {
-    marginTop: Spacing["3xl"],
+  addButton: {
+    marginBottom: Spacing.xl,
   },
-  emptyState: {
-    alignItems: "center",
-    marginTop: Spacing["3xl"],
-    paddingHorizontal: Spacing.xl,
+  emptyText: {
+    textAlign: "center",
+    marginVertical: Spacing.xl,
   },
   serviceCard: {
-    flexDirection: "row",
-    padding: Spacing.lg,
+    padding: Spacing.md,
     borderRadius: BorderRadius.md,
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
   },
-  serviceInfo: {
-    flex: 1,
-  },
-  serviceName: {
-    marginBottom: Spacing.xs,
-  },
-  serviceDetails: {
+  serviceHeader: {
     flexDirection: "row",
-    marginTop: Spacing.sm,
+    alignItems: "center",
   },
   serviceActions: {
     flexDirection: "row",
-    alignItems: "center",
-  },
-  actionButton: {
-    padding: Spacing.sm,
-    marginLeft: Spacing.xs,
-  },
-  fabContainer: {
-    position: "absolute",
-    right: Spacing.xl,
-  },
-  fab: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    gap: Spacing.sm,
   },
   modalOverlay: {
     flex: 1,
@@ -404,4 +400,14 @@ const styles = StyleSheet.create({
   saveButton: {
     marginTop: Spacing.lg,
   },
+  sortOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
 });
+
+

@@ -1,3 +1,4 @@
+
 import React from "react";
 import { View, StyleSheet, FlatList, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -6,7 +7,7 @@ import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueries } from "@tanstack/react-query";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { ProviderCard } from "@/components/ProviderCard";
@@ -14,9 +15,15 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/contexts/AuthContext";
 import { Spacing } from "@/constants/theme";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
-import { favoritesService, providersService, usersService } from "@/lib/query-client";
+import { favoritesService, providersService, servicesService } from "@/lib/query-client";
+import { ServiceData } from "@/lib/firestore"; // Import adicionado
 
 type NavigationProp = NativeStackNavigationProp<HomeStackParamList>;
+
+type ProviderWithServices = {
+  provider: NonNullable<Awaited<ReturnType<typeof providersService.get>>>;
+  services: ServiceData[];
+};
 
 export default function FavoritesScreen() {
   const insets = useSafeAreaInsets();
@@ -26,53 +33,82 @@ export default function FavoritesScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { user } = useAuth();
 
-  const { data: favorites = [], isLoading } = useQuery({
+  const { data: favorites, isLoading: favoritesLoading } = useQuery({
     queryKey: ["favorites", user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-      const favs = await favoritesService.getByUser(user.id);
-      const favsWithProviders = await Promise.all(
-        favs.map(async (fav) => {
-          const provider = await providersService.get(fav.providerId);
-          if (!provider) return null;
-          const providerUser = await usersService.get(provider.userId);
-          return { ...fav, provider: { ...provider, user: providerUser } };
-        })
-      );
-      return favsWithProviders.filter(Boolean);
-    },
-    enabled: !!user,
+    queryFn: () => favoritesService.getByUser(user?.id || ""),
+    enabled: !!user?.id,
   });
 
+  const providerQueries = favorites?.map((fav) => ({
+    queryKey: ["provider", fav.providerId],
+    queryFn: () => providersService.get(fav.providerId),
+    enabled: !!fav.providerId,
+  })) ?? [];
+
+  const providerResults = useQueries({ queries: providerQueries });
+
+  const validProviders = providerResults
+    .filter((result) => result.data !== null && result.data !== undefined)
+    .map((result) => result.data!);
+
+  const servicesQueries = validProviders.map((provider) => ({
+    queryKey: ["services", provider.id],
+    queryFn: () => servicesService.getByProvider(provider.id),
+  }));
+
+  const servicesResults = useQueries({ queries: servicesQueries });
+
+  const providersWithServices: ProviderWithServices[] = validProviders.map((provider, index) => ({
+    provider,
+    services: servicesResults[index]?.data ?? [],
+  }));
+
+  const isLoading = favoritesLoading || providerResults.some((r) => r.isLoading);
+
   const handleProviderPress = (providerId: string) => {
-    navigation.navigate("HomeTab" as any, {
-      screen: "Provider",
-      params: { providerId },
-    });
+    navigation.navigate("Provider", { providerId });
   };
+
+  const renderFavoriteRow = ({ item }: { item: ProviderWithServices[] }) => (
+    <View style={styles.row}>
+      {item.map((entry) => (
+        <ProviderCard
+          key={entry.provider.id}
+          provider={entry.provider}
+          services={entry.services}
+          style={styles.gridCard}
+          onPress={() => handleProviderPress(entry.provider.id)}
+        />
+      ))}
+    </View>
+  );
+
+  const chunkArray = <T,>(array: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  };
+
+  const favoriteRows = chunkArray(providersWithServices, 2);
 
   return (
     <ThemedView style={styles.container}>
       <FlatList
-        data={favorites}
-        keyExtractor={(item: any) => item.id}
-        numColumns={2}
-        columnWrapperStyle={favorites.length > 1 ? styles.row : undefined}
+        data={favoriteRows}
+        renderItem={renderFavoriteRow}
+        keyExtractor={(item) => item.map((entry) => entry.provider.id).join("-")}
         contentContainerStyle={[
           styles.listContent,
-          { paddingTop: headerHeight + Spacing.lg, paddingBottom: tabBarHeight + Spacing.xl },
+          {
+            paddingTop: insets.top + headerHeight + Spacing.lg,
+            paddingBottom: tabBarHeight + Spacing.xl,
+          },
         ]}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
-        renderItem={({ item }: { item: any }) => (
-          <ProviderCard
-            provider={item.provider}
-            onPress={() => handleProviderPress(item.provider.id)}
-            style={styles.gridCard}
-          />
-        )}
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator color={theme.primary} style={styles.loader} />
+            <ActivityIndicator style={styles.loader} color={theme.primary} />
           ) : (
             <View style={styles.emptyContainer}>
               <Feather name="heart" size={48} color={theme.textSecondary} />

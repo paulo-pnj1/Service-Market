@@ -1,3 +1,4 @@
+
 import React from "react";
 import { View, StyleSheet, FlatList, ActivityIndicator, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -14,177 +15,173 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 import { serviceOrdersService, servicesService, providersService, usersService } from "@/lib/query-client";
 import { RootStackParamList } from "@/navigation/RootStackNavigator";
 import { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
+import { ServiceData, ProviderData, UserData } from "@/lib/firestore";
 
 type NavigationProp = CompositeNavigationProp<
-  NativeStackNavigationProp<ProfileStackParamList, "OrderHistory">,
+  NativeStackNavigationProp<ProfileStackParamList>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
 interface Order {
   id: string;
+  service: { id?: string; name: string; price: number };
+  provider: { id: string; userName: string };
   status: string;
   scheduledDate?: Date;
-  completedDate?: Date;
-  notes?: string;
-  totalPrice?: number;
+  price?: number;
   createdAt: Date;
-  service: {
-    id: string;
-    name: string;
-    price: number;
-  };
-  provider: {
-    id: string;
-    user: {
-      name: string;
-      photoUrl?: string;
-    };
-  };
 }
-
-const statusColors: Record<string, string> = {
-  pending: "#F39C12",
-  confirmed: "#3498DB",
-  in_progress: "#9B59B6",
-  completed: "#27AE60",
-  cancelled: "#E74C3C",
-};
-
-const statusLabels: Record<string, string> = {
-  pending: "Pendente",
-  confirmed: "Confirmado",
-  in_progress: "Em Andamento",
-  completed: "Concluido",
-  cancelled: "Cancelado",
-};
 
 export default function OrderHistoryScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const { theme } = useTheme();
-  const { user } = useAuth();
   const navigation = useNavigation<NavigationProp>();
+  const { user } = useAuth();
 
-  const { data: orders = [], isLoading } = useQuery<Order[]>({
-    queryKey: ["orders", user?.id],
+  const isProvider = user?.role === "provider";
+
+  const { data: enrichedOrders = [], isLoading } = useQuery<Order[]>({
+    queryKey: ["orderHistory", user?.id, isProvider],
     queryFn: async () => {
-      if (!user) return [];
-      const ordersData = await serviceOrdersService.getByClient(user.id);
-      
-      const ordersWithDetails = await Promise.all(
-        ordersData.map(async (order) => {
-          const service = await servicesService.get(order.serviceId);
-          const provider = await providersService.get(order.providerId);
-          const providerUser = provider ? await usersService.get(provider.userId) : null;
-          
+      if (!user?.id) return [];
+
+      const rawOrders = isProvider
+        ? await serviceOrdersService.getByProvider(user.id)
+        : await serviceOrdersService.getByClient(user.id);
+
+      const enriched = await Promise.all(
+        rawOrders.map(async (order) => {
+          let serviceName = "Serviço não especificado";
+          let servicePrice = 0;
+
+          if (order.serviceId) {
+            const service = await servicesService.get(order.serviceId);
+            if (service) {
+              serviceName = service.name;
+              servicePrice = service.price ?? 0;
+            }
+          }
+
+          // Carregar o nome do prestador a partir do documento do usuário vinculado ao provider
+          let providerName = "Prestador desconhecido";
+          if (order.providerId) {
+            const provider = await providersService.get(order.providerId);
+            if (provider?.userId) {
+              const providerUser = await usersService.get(provider.userId);
+              providerName = providerUser?.name || "Prestador desconhecido";
+            }
+          }
+
           return {
-            ...order,
-            service: service || { id: order.serviceId, name: "Servico", price: 0 },
+            id: order.id,
+            service: {
+              id: order.serviceId,
+              name: serviceName,
+              price: servicePrice,
+            },
             provider: {
               id: order.providerId,
-              user: providerUser || { name: "Prestador" },
+              userName: providerName,
             },
+            status: order.status,
+            scheduledDate: order.scheduledDate,
+            price: order.price || servicePrice,
+            createdAt: order.createdAt,
           };
         })
       );
-      
-      return ordersWithDetails;
+
+      return enriched.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     },
     enabled: !!user?.id,
   });
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString("pt-AO", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case "completed":
+      case "concluído":
+        return theme.success;
+      case "pending":
+      case "pendente":
+        return theme.warning;
+      case "cancelled":
+      case "cancelado":
+        return theme.error;
+      default:
+        return theme.textSecondary;
+    }
   };
 
-  const renderOrder = ({ item }: { item: Order }) => {
-    const statusColor = statusColors[item.status] || theme.textSecondary;
-    const statusLabel = statusLabels[item.status] || item.status;
-
-    return (
-      <Pressable
-        style={[styles.orderCard, { backgroundColor: theme.backgroundSecondary }]}
-        onPress={() => {
-          if (item.status === "completed") {
-            navigation.getParent()?.getParent()?.navigate("Review", { providerId: item.provider.id, providerName: item.provider.user.name });
-          }
-        }}
-      >
-        <View style={styles.orderHeader}>
-          <View style={styles.orderInfo}>
-            <ThemedText type="body" style={{ fontWeight: "600" }}>{item.service.name}</ThemedText>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              {item.provider.user.name}
-            </ThemedText>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
-            <ThemedText type="small" style={{ color: statusColor, fontWeight: "600" }}>
-              {statusLabel}
-            </ThemedText>
-          </View>
-        </View>
-
-        <View style={styles.orderDetails}>
-          <View style={styles.detailRow}>
-            <Ionicons name="calendar-outline" size={16} color={theme.textSecondary} />
-            <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.xs }}>
-              {item.scheduledDate ? formatDate(item.scheduledDate) : formatDate(item.createdAt)}
-            </ThemedText>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="cash-outline" size={16} color={theme.primary} />
-            <ThemedText type="small" style={{ color: theme.primary, marginLeft: Spacing.xs, fontWeight: "600" }}>
-              {item.totalPrice || item.service.price} Kz
-            </ThemedText>
-          </View>
-        </View>
-
-        {item.notes && (
-          <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.sm }}>
-            {item.notes}
+  const renderOrder = ({ item }: { item: Order }) => (
+    <View style={[styles.orderCard, { backgroundColor: theme.backgroundSecondary }]}>
+      <View style={styles.orderHeader}>
+        <View style={styles.orderInfo}>
+          <ThemedText type="body" numberOfLines={1}>
+            {item.service.name}
           </ThemedText>
-        )}
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
+            {item.provider.userName}
+          </ThemedText>
+        </View>
+        <View
+          style={[
+            styles.statusBadge,
+            { backgroundColor: getStatusColor(item.status) + "20" },
+          ]}
+        >
+          <ThemedText type="small" style={{ color: getStatusColor(item.status) }}>
+            {item.status}
+          </ThemedText>
+        </View>
+      </View>
 
-        {item.status === "completed" && (
-          <View style={styles.reviewPrompt}>
-            <Ionicons name="star-outline" size={16} color={theme.primary} />
-            <ThemedText type="small" style={{ color: theme.primary, marginLeft: Spacing.xs }}>
-              Toque para avaliar
-            </ThemedText>
-          </View>
-        )}
-      </Pressable>
-    );
-  };
+      <View style={styles.orderDetails}>
+        <View style={styles.detailRow}>
+          <Ionicons name="calendar-outline" size={14} color={theme.textSecondary} />
+          <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.xs }}>
+            {item.scheduledDate
+              ? item.scheduledDate.toLocaleDateString("pt-AO")
+              : "Data não definida"}
+          </ThemedText>
+        </View>
+        <ThemedText type="body">
+          AOA {item.price ?? item.service.price}
+        </ThemedText>
+      </View>
+
+      {item.status.toLowerCase() === "completed" && (
+        <Pressable
+          style={styles.reviewPrompt}
+          onPress={() => navigation.navigate("Review", { providerId: item.provider.id, providerName: item.provider.userName })}
+        >
+          <Ionicons name="star-outline" size={18} color={theme.primary} />
+          <ThemedText type="small" style={{ color: theme.primary, marginLeft: Spacing.xs }}>
+            Avaliar prestador
+          </ThemedText>
+        </Pressable>
+      )}
+    </View>
+  );
 
   return (
     <ThemedView style={styles.container}>
       <FlatList
-        data={orders}
-        keyExtractor={(item) => item.id}
+        data={enrichedOrders}
         renderItem={renderOrder}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={[
-          styles.list,
-          { paddingTop: headerHeight + Spacing.lg, paddingBottom: insets.bottom + Spacing.xl },
+          styles.listContent,
+          { paddingTop: insets.top + headerHeight + Spacing.lg },
         ]}
         ListEmptyComponent={
           isLoading ? (
-            <ActivityIndicator size="large" color={theme.primary} style={styles.loader} />
+            <ActivityIndicator color={theme.primary} style={{ marginTop: Spacing.xl }} />
           ) : (
             <View style={styles.emptyState}>
-              <Ionicons name="receipt-outline" size={64} color={theme.textSecondary} />
-              <ThemedText type="body" style={{ textAlign: "center", marginTop: Spacing.lg, fontWeight: "600" }}>
-                Nenhum servico contratado
-              </ThemedText>
-              <ThemedText
-                type="small"
-                style={{ textAlign: "center", color: theme.textSecondary, marginTop: Spacing.sm }}
-              >
-                Quando voce contratar um servico, ele aparecera aqui
+              <Ionicons name="receipt-outline" size={48} color={theme.textSecondary} />
+              <ThemedText type="body" style={{ color: theme.textSecondary, marginTop: Spacing.md }}>
+                Nenhum histórico de serviços
               </ThemedText>
             </View>
           )
@@ -198,12 +195,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  list: {
+  listContent: {
     paddingHorizontal: Spacing.lg,
-    flexGrow: 1,
-  },
-  loader: {
-    marginTop: Spacing["3xl"],
+    paddingBottom: Spacing.xl,
   },
   emptyState: {
     alignItems: "center",
